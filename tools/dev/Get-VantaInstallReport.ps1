@@ -1,0 +1,1713 @@
+<#
+.SYNOPSIS
+    Collects one text report of what Vanta installed on this machine, what no longer
+    holds, and the machine state around it, for sending back with a bug report.
+.DESCRIPTION
+    Run this on a machine that has Vanta installed. It reads only; it changes nothing.
+
+    The report has two kinds of section. The one to trust first is the drift check: the
+    installed health check reads every recorded toggle state and every applicable install
+    tweak back from this machine and reports what no longer holds. Everything else is
+    context that the drift check cannot cover, because that work is imperative rather
+    than declared, or because it describes the machine rather than Vanta:
+
+      1. Machine, under a summary of the findings.
+      2. Vanta install state: the state document and its recorded toggle states, then
+         any unfinished install transaction and the last completed one, with their
+         completed steps.
+      3. The toggle state registry store.
+      4. Drift, from VantaModules\Scripts\Entry\Test-VantaHealth.ps1, stopped after
+         25 seconds so the sections after it still have time.
+      5. Spot checks: Edge, Defender, Vanta CBS packages, Vanta folders, appearance.
+      6. Services and drivers, with their startup types.
+      7. Installed applications and AppX packages, including every package Vanta
+         removes that any account still has: with each account's install state when
+         elevated, otherwise with the accounts the AppX store's registry lists.
+      8. Scheduled tasks.
+      9. Startup entries and pending-restart state.
+     10. Event log errors and warnings since the install (the newest 5,000 per log);
+         for AppX deployment, errors, then warnings and information over the
+         install, with the events that name a package Vanta removes.
+     11. The tail of the Vanta install logs and this account's user-setup transcript.
+     12. Windows version transition: what Vanta Manager changed to move Windows to
+         another release, whether Windows rebuilt itself during the move, Windows
+         Update policy and history, Vanta servicing packages, and the tails of the
+         servicing and Setup logs and update events.
+
+    Every section is independent. One that cannot be collected records why, and the
+    report still completes.
+
+    Vanta Manager runs this script with -OutputPath and -PartialPath when it exports
+    diagnostics.
+.PARAMETER OutputPath
+    Where to write the report. Defaults to a timestamped file on the current user's
+    Desktop.
+.PARAMETER LogLines
+    How many lines to keep from the end of each log file.
+.PARAMETER EventCount
+    How many recent event log entries to list per log, after the counts by source.
+.PARAMETER PartialPath
+    Also appends each section to this file as it finishes, so the sections collected
+    so far survive if the run is stopped. Removed once the full report is written.
+.PARAMETER RcDiagnostics
+    Also collects Windows Search configuration and effective scope, the PCA task and its
+    history, OneDrive shell-extension permissions and owners, WebView2 runtime files and
+    registration, local policy processing and BITS failures. Read-only: it does not
+    enable event logs, reapply settings, stop processes or restart Windows.
+.EXAMPLE
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\Get-VantaInstallReport.ps1
+.NOTES
+    Run it from an elevated Windows PowerShell prompt, as the account that installed
+    Vanta. Elevation makes every machine read succeed, and the per-user checks are only
+    meaningful for that account.
+
+    Exit codes: 0 the report was written, 1 it could not be written. A section that
+    fails is recorded in the report and doesn't change the exit code.
+#>
+[CmdletBinding()]
+param(
+    [string]$OutputPath,
+
+    [ValidateRange(1, 500)]
+    [int]$LogLines = 40,
+
+    [ValidateRange(1, 500)]
+    [int]$EventCount = 60,
+
+    [string]$PartialPath,
+
+    [switch]$RcDiagnostics
+)
+
+Set-StrictMode -Version 3.0
+$ErrorActionPreference = 'Stop'
+
+if (-not $OutputPath) {
+    $desktop = [Environment]::GetFolderPath('DesktopDirectory')
+    if ([string]::IsNullOrWhiteSpace($desktop)) {
+        $desktop = $env:USERPROFILE
+    }
+    $OutputPath = Join-Path -Path $desktop -ChildPath ('vanta-install-report-{0:yyyyMMdd-HHmmss}.txt' -f (Get-Date))
+}
+
+# Collector inputs live at script scope so a test can run one collector on its own.
+$script:LogTailLines = $LogLines
+$script:EventListCount = $EventCount
+# Newest events read per log. Limits the time the event section takes on a machine
+# with a long history since the install.
+$script:EventReadLimit = 5000
+# On a slow machine the health check alone can outlast Vanta Manager's deadline for the
+# whole collection. Stopping it here leaves time for the sections after it.
+$script:HealthCheckSeconds = 25
+$script:Summary = New-Object System.Collections.Generic.List[string]
+$script:PartialReport = $PartialPath
+$script:Utf8 = New-Object System.Text.UTF8Encoding($false)
+
+$windir = [Environment]::GetFolderPath('Windows')
+$vantaModules = Join-Path -Path $windir -ChildPath 'VantaModules'
+$vantaDesktop = Join-Path -Path $windir -ChildPath 'VantaDesktop'
+$vantaState = Join-Path -Path $windir -ChildPath 'Vanta'
+$report = New-Object System.Collections.Generic.List[string]
+if ($script:PartialReport) {
+    [IO.File]::WriteAllLines($script:PartialReport, [string[]]@(
+            'Vanta install report, partial: the sections finished before collection stopped.'
+        ), $script:Utf8)
+}
+
+# A NUL read from a registry value or event text would make Vanta Manager take the
+# report for UTF-16 without a byte order mark and leave it out of the diagnostics.
+function Add-Line {
+    param([string]$Text = '')
+    $report.Add($Text.Replace("`0", ''))
+}
+
+function Add-Summary {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    $script:Summary.Add($Text.Replace("`0", ''))
+}
+
+function Add-Section {
+    <#
+    .SYNOPSIS
+        Runs one collector and records its output, or the reason it produced none.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Title,
+        [Parameter(Mandatory = $true)][scriptblock]$Collector
+    )
+
+    # diagnostics.rs reads the last 'Collecting: ' line to name a section that timed out.
+    Write-Host "Collecting: $Title"
+    $start = $report.Count
+    Add-Line ''
+    Add-Line ('=' * 78)
+    Add-Line $Title
+    Add-Line ('=' * 78)
+    try {
+        $output = & $Collector
+        $lines = @($output | ForEach-Object { "$_" })
+        if ($lines.Count -eq 0) {
+            Add-Line '(nothing to report)'
+            return
+        }
+        foreach ($line in $lines) {
+            Add-Line $line
+        }
+    }
+    catch {
+        Add-Line "COLLECTION FAILED: $($_.Exception.Message)"
+        Add-Summary "Section '$Title' could not be collected: $($_.Exception.Message)"
+    }
+    finally {
+        # The partial report is a best-effort copy: failing to update it must
+        # not stop this section or the ones after it.
+        if ($script:PartialReport) {
+            try {
+                [IO.File]::AppendAllLines($script:PartialReport, [string[]]$report.GetRange($start, $report.Count - $start), $script:Utf8)
+            }
+            catch {
+                Add-Summary "The partial report could not be updated after section '$Title': $($_.Exception.Message)"
+                $script:PartialReport = $null
+            }
+        }
+    }
+}
+
+function Get-RegistryValueOrNull {
+    <#
+    .SYNOPSIS
+        Reads one registry value, returning $null when the key or the value is absent.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    $item = Get-ItemProperty -LiteralPath $Path -ErrorAction SilentlyContinue
+    if ($null -eq $item -or @($item.PSObject.Properties.Name) -notcontains $Name) {
+        return $null
+    }
+    return $item.$Name
+}
+
+function Get-FileTail {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][int]$Count
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return "(missing: $Path)"
+    }
+    $lines = @(Get-Content -LiteralPath $Path -Tail $Count -ErrorAction Stop)
+    return @("--- last $($lines.Count) line(s) of $Path ---") + $lines
+}
+
+function Test-PathState {
+    param(
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $exists = Test-Path -LiteralPath $Path
+    return ('{0,-46} {1}  {2}' -f $Label, $(if ($exists) { 'PRESENT' } else { 'absent ' }), $Path)
+}
+
+function Get-InstallTransactionLine {
+    <#
+    .SYNOPSIS
+        The report lines for one install transaction document, in the same layout for an
+        unfinished transaction and the last completed one.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)]$Transaction
+    )
+
+    '{0,-20}: {1}' -f [IO.Path]::GetFileName($Path), $Path
+    "  status            : $($Transaction.status)"
+    "  targetVersion     : $($Transaction.targetVersion)  mode $($Transaction.mode)"
+    "  transactionId     : $($Transaction.transactionId)"
+    "  options           : $(@($Transaction.options) -join ', ')"
+    "  lastError         : $(if ($Transaction.lastError) { $Transaction.lastError } else { '(none)' })"
+    "  completedSteps    : $(@($Transaction.completedSteps).Count)"
+    foreach ($step in @($Transaction.completedSteps)) {
+        "    $step"
+    }
+}
+
+function Get-EventWindow {
+    <#
+    .SYNOPSIS
+        When event log queries begin, and why: the start of an unfinished install, half
+        an hour before the recorded install, or this boot. End is when the install's
+        own AppX activity is over, or $null while it may still be going on.
+    #>
+    $activePath = Join-Path -Path $vantaState -ChildPath 'Install\active.json'
+    if (Test-Path -LiteralPath $activePath -PathType Leaf) {
+        # The install state is replaced in place, which keeps the creation time of its
+        # first write: when this install began.
+        return [pscustomobject]@{
+            Start = (Get-Item -LiteralPath $activePath).CreationTime
+            End   = $null
+            Basis = 'the start of the unfinished install'
+        }
+    }
+    if ($script:InstalledAt) {
+        # Windows finishes some removals at the restart and sign-in after the install.
+        return [pscustomobject]@{
+            Start = $script:InstalledAt.AddMinutes(-30)
+            End   = $script:InstalledAt.AddHours(1)
+            Basis = 'half an hour before the install finished'
+        }
+    }
+    return [pscustomobject]@{
+        Start = (Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime
+        End   = $null
+        Basis = 'this boot; no install time is recorded'
+    }
+}
+
+function Get-AppxRemovalPattern {
+    <#
+    .SYNOPSIS
+        The package-family patterns the installed Vanta removes, each with the option
+        that gates it and whether Vanta only warns when it stays, read from its AppX
+        module's source without running it. Empty when Vanta isn't installed.
+    #>
+    param([Parameter(Mandatory = $true)][string]$ModulesPath)
+
+    $domain = Join-Path -Path $ModulesPath -ChildPath 'Scripts\Modules\Vanta.Appx\Domain'
+    $patterns = New-Object System.Collections.Generic.List[object]
+    $seen = New-Object System.Collections.Generic.HashSet[string]([StringComparer]::OrdinalIgnoreCase)
+    foreach ($file in 'Removal.ps1', 'PhoneLink.ps1') {
+        $path = Join-Path -Path $domain -ChildPath $file
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$null)
+        # Each removal definition is a hashtable literal with Name, Option and
+        # IgnoreErrors keys.
+        $tables = $ast.FindAll({ param($node) $node -is [Management.Automation.Language.HashtableAst] }, $true)
+        foreach ($table in $tables) {
+            $values = @{}
+            foreach ($pair in $table.KeyValuePairs) {
+                $expression = if ($pair.Item2 -is [Management.Automation.Language.PipelineAst]) { $pair.Item2.GetPureExpression() } else { $null }
+                $values[$pair.Item1.Extent.Text.Trim("'", '"')] = $expression
+            }
+            if (-not $values.ContainsKey('IgnoreErrors') -or
+                $values['Name'] -isnot [Management.Automation.Language.StringConstantExpressionAst] -or
+                -not $seen.Add($values['Name'].Value)) {
+                continue
+            }
+            $option = $values['Option']
+            $ignoreErrors = $values['IgnoreErrors']
+            $patterns.Add([pscustomobject]@{
+                    Pattern      = $values['Name'].Value
+                    Option       = if ($option -is [Management.Automation.Language.StringConstantExpressionAst]) { $option.Value } else { $null }
+                    # The AppX phase only warns when Phone Link stays.
+                    IgnoreErrors = $file -eq 'PhoneLink.ps1' -or
+                    ($ignoreErrors -is [Management.Automation.Language.VariableExpressionAst] -and
+                        $ignoreErrors.VariablePath.UserPath -eq 'true')
+                })
+        }
+    }
+    return $patterns.ToArray()
+}
+
+function Get-RecordedInstallOption {
+    <#
+    .SYNOPSIS
+        The options chosen for an unfinished install, otherwise for the last one, and
+        the file they came from; $null when neither records any.
+    #>
+    foreach ($path in @((Join-Path -Path $vantaState -ChildPath 'Install\active.json'), (Join-Path -Path $vantaState -ChildPath 'state.json'))) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        try {
+            $document = [IO.File]::ReadAllText($path) | ConvertFrom-Json
+        }
+        catch { continue }
+        if ($document -is [Management.Automation.PSCustomObject] -and $null -ne $document.PSObject.Properties['options']) {
+            return [pscustomobject]@{ Options = @($document.options | ForEach-Object { [string]$_ }); Source = [IO.Path]::GetFileName($path) }
+        }
+    }
+    return $null
+}
+
+function Test-AppxPatternMatch {
+    <#
+    .SYNOPSIS
+        Whether a package's name, family name or full name matches a removal pattern,
+        as the AppX module matches them. Exact patterns name a family, Name_PublisherId.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()][AllowEmptyString()][AllowEmptyCollection()][string[]]$Identity,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Pattern
+    )
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+    foreach ($name in @($Identity | Where-Object { $_ })) {
+        $candidates.Add($name)
+        # A full or provisioned name is Name_Version_Architecture_ResourceId_PublisherId.
+        $segments = @($name -split '_')
+        $candidates.Add($segments[0])
+        if ($segments.Count -ge 5) { $candidates.Add(('{0}_{1}' -f $segments[0], $segments[-1])) }
+    }
+    foreach ($candidate in $candidates) {
+        foreach ($item in $Pattern) {
+            if ($candidate -like $item) { return $true }
+        }
+    }
+    return $false
+}
+
+function Get-AppxAllUserStorePackage {
+    <#
+    .SYNOPSIS
+        Each package matching a removal pattern in the AppX store's registry, with the
+        accounts it is listed for. Any account can read it, unlike Get-AppxPackage
+        -AllUsers, though it has no install states. Present is whether an account or
+        new accounts still get it, with its files on disk.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Pattern,
+        # Overridable for tests.
+        [Microsoft.Win32.RegistryKey]$Hive = [Microsoft.Win32.Registry]::LocalMachine,
+        [string]$Store = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore'
+    )
+
+    $root = $Hive.OpenSubKey($Store, $false)
+    if ($null -eq $root) {
+        throw "The AppX store is missing: $($Hive.Name)\$Store"
+    }
+    $found = [ordered]@{}
+    try {
+        # An account's key lists the packages registered to it, and Applications the
+        # provisioned ones; EndOfLife and Deleted\EndOfLife list, per account, removals
+        # Windows hasn't finished, and Staged lists staged packages.
+        $places = New-Object System.Collections.Generic.List[object]
+        foreach ($name in @($root.GetSubKeyNames() | Where-Object { $_ -like 'S-1-*' })) {
+            $places.Add([pscustomobject]@{ Key = $name; Text = "listed for $name"; Counts = $true })
+        }
+        foreach ($endOfLife in 'EndOfLife', 'Deleted\EndOfLife') {
+            $key = $root.OpenSubKey($endOfLife, $false)
+            if ($null -eq $key) { continue }
+            try {
+                foreach ($name in $key.GetSubKeyNames()) {
+                    $places.Add([pscustomobject]@{ Key = "$endOfLife\$name"; Text = "removal pending for $name ($endOfLife)"; Counts = $false })
+                }
+            }
+            finally { $key.Dispose() }
+        }
+        $places.Add([pscustomobject]@{ Key = 'Staged'; Text = 'staged'; Counts = $false })
+        $places.Add([pscustomobject]@{ Key = 'Applications'; Text = 'provisioned for new accounts'; Counts = $true })
+        foreach ($place in $places) {
+            $key = $root.OpenSubKey($place.Key, $false)
+            if ($null -eq $key) { continue }
+            try {
+                foreach ($package in @($key.GetSubKeyNames() | Sort-Object)) {
+                    if (-not (Test-AppxPatternMatch -Identity $package -Pattern $Pattern)) { continue }
+                    # Windows leaves entries behind for packages long gone, so an entry
+                    # counts only while the manifest it points to is on disk.
+                    $path = $null
+                    $entry = $key.OpenSubKey($package, $false)
+                    if ($null -ne $entry) {
+                        try { $path = [string]$entry.GetValue('Path') }
+                        finally { $entry.Dispose() }
+                    }
+                    $onDisk = $null
+                    if ($path) {
+                        try { $onDisk = [IO.File]::Exists($path) -or [IO.Directory]::Exists($path) }
+                        catch { $onDisk = $null }
+                    }
+                    $note = if ($onDisk -eq $true) { '' } elseif ($onDisk -eq $false) { ' (stale: its files are gone)' } else { ' (no path recorded)' }
+                    if (-not $found.Contains($package)) {
+                        $found[$package] = [pscustomobject]@{ Places = New-Object System.Collections.Generic.List[string]; Present = $false }
+                    }
+                    $found[$package].Places.Add("$($place.Text)$note")
+                    if ($place.Counts -and $onDisk -eq $true) { $found[$package].Present = $true }
+                }
+            }
+            finally { $key.Dispose() }
+        }
+    }
+    finally { $root.Dispose() }
+    foreach ($package in $found.Keys) {
+        [pscustomobject]@{ Package = $package; Places = $found[$package].Places.ToArray(); Present = $found[$package].Present }
+    }
+}
+
+function Get-VantaServicingPackageLine {
+    <#
+    .SYNOPSIS
+        The Vanta servicing packages, read from the servicing registry, which any account
+        can read, unlike DISM.
+    #>
+    param(
+        # Overridable for tests.
+        [Microsoft.Win32.RegistryKey]$Hive = [Microsoft.Win32.Registry]::LocalMachine,
+        [string]$Packages = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\Packages'
+    )
+
+    $stateNames = @{
+        0 = 'Absent'; 5 = 'Uninstall Pending'; 16 = 'Resolving'; 32 = 'Resolved'; 48 = 'Staging'; 64 = 'Staged'
+        80 = 'Superseded'; 96 = 'Install Pending'; 101 = 'Partially Installed'; 112 = 'Installed'; 128 = 'Permanent'
+    }
+    $root = $Hive.OpenSubKey($Packages, $false)
+    if ($null -eq $root) {
+        return "(the servicing package store is missing: $($Hive.Name)\$Packages)"
+    }
+    try {
+        $names = @($root.GetSubKeyNames() | Where-Object { $_ -match '^Z-(?:Atlas|Vanta)-' } | Sort-Object)
+        if ($names.Count -eq 0) {
+            return 'none installed'
+        }
+        foreach ($name in $names) {
+            $key = $root.OpenSubKey($name, $false)
+            if ($null -eq $key) {
+                "$name [unreadable]"
+                continue
+            }
+            try {
+                $state = $key.GetValue('CurrentState')
+                $stateText = if ($null -eq $state) { 'no CurrentState' }
+                elseif ($stateNames.ContainsKey([int]$state)) { "$($stateNames[[int]$state]), $state" }
+                else { "state $state" }
+                # A FILETIME split into two DWORDs, which the registry returns signed.
+                $high = $key.GetValue('InstallTimeHigh')
+                $low = $key.GetValue('InstallTimeLow')
+                $installedAt = '(unknown)'
+                if ($null -ne $high -and $null -ne $low) {
+                    try {
+                        $fileTime = (([long]$high -band 0xFFFFFFFFL) -shl 32) -bor ([long]$low -band 0xFFFFFFFFL)
+                        $installedAt = [DateTime]::FromFileTimeUtc($fileTime).ToString('u')
+                    }
+                    catch { $installedAt = "(unreadable: $high/$low)" }
+                }
+                "$name [$stateText]"
+                "  installed $installedAt by $($key.GetValue('InstallUser')) through $($key.GetValue('InstallClient'))"
+                "  from $($key.GetValue('InstallLocation'))"
+            }
+            finally { $key.Dispose() }
+        }
+    }
+    finally { $root.Dispose() }
+}
+
+# Event log queries start at the install time; without it, they start at this boot.
+$script:InstalledAt = $null
+$statePath = Join-Path -Path $vantaState -ChildPath 'state.json'
+if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+    try {
+        $stateDocument = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+        $script:InstalledAt = [datetime]::Parse([string]$stateDocument.installedAt)
+    }
+    catch {
+        $script:InstalledAt = $null
+    }
+}
+
+Add-Section -Title '1. Machine' -Collector {
+    $os = Get-CimInstance -ClassName Win32_OperatingSystem
+    $computer = Get-CimInstance -ClassName Win32_ComputerSystem
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    $versionKey = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+    $elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $elevated) {
+        Add-Summary 'Collected without elevation, so some sections are incomplete.'
+    }
+
+    "Edition           : $($os.Caption)"
+    "Version           : $(Get-RegistryValueOrNull -Path $versionKey -Name 'DisplayVersion') (build $(Get-RegistryValueOrNull -Path $versionKey -Name 'CurrentBuild').$(Get-RegistryValueOrNull -Path $versionKey -Name 'UBR'))"
+    "Architecture      : $env:PROCESSOR_ARCHITECTURE"
+    "Model             : $($computer.Manufacturer) $($computer.Model)"
+    "Memory            : $([math]::Round($computer.TotalPhysicalMemory / 1GB, 1)) GB"
+    "PowerShell        : $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
+    "User              : $($identity.Name) [$($identity.User.Value)]"
+    "Elevated          : $elevated"
+    "OS install date   : $($os.InstallDate)"
+    "Last boot         : $($os.LastBootUpTime)"
+    "Vanta installed   : $(if ($script:InstalledAt) { $script:InstalledAt } else { '(unknown)' })"
+}
+
+Add-Section -Title '2. Vanta install state' -Collector {
+    $activePath = Join-Path -Path $vantaState -ChildPath 'Install\active.json'
+    $lastPath = Join-Path -Path $vantaState -ChildPath 'Install\last.json'
+    $lines = @()
+
+    if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+        $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+        $lines += "state.json          : $statePath"
+        $lines += "  installedVersion  : $($state.installedVersion)"
+        $lines += "  installedAt       : $($state.installedAt)"
+        $lines += "  mode              : $($state.mode)  (interactive=$($state.isInteractive))"
+        $lines += "  options           : $(@($state.options) -join ', ')"
+        $lines += '  history           :'
+        foreach ($entry in @($state.history)) {
+            $lines += "    $($entry.version) $($entry.mode) $($entry.completedAt) [$($entry.transactionId)]"
+        }
+        $toggles = @($state.toggles.PSObject.Properties | Sort-Object -Property Name)
+        $lines += "  recorded toggles  : $($toggles.Count)"
+        foreach ($toggle in $toggles) {
+            $lines += ('    {0,-32} state {1}  {2}' -f $toggle.Name, $toggle.Value.state, $toggle.Value.updatedAt)
+        }
+        Add-Summary "Vanta $($state.installedVersion) installed $($state.installedAt) ($($state.mode)), $($toggles.Count) recorded toggle(s)."
+    }
+    else {
+        $lines += "state.json is missing at '$statePath'."
+        Add-Summary 'The Vanta machine state document is missing.'
+    }
+
+    # A failed or interrupted install keeps its transaction, and the error that stopped
+    # it, in active.json until it is resumed; last.json is written only on completion.
+    # An empty or 'null' file parses to nothing without an error, and a missing property
+    # throws under strict mode, so both count as unreadable, as they do for the engine.
+    $lines += ''
+    $activeFound = $false
+    foreach ($path in @($activePath, "$activePath.bak")) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        $activeFound = $true
+        try {
+            $active = [IO.File]::ReadAllText($path) | ConvertFrom-Json
+            if ($active -isnot [Management.Automation.PSCustomObject]) { throw 'It is empty or not a JSON object.' }
+            $transactionLines = @(Get-InstallTransactionLine -Path $path -Transaction $active)
+            $summary = "Unfinished install transaction: $($active.mode) of $($active.targetVersion), status $($active.status), $(@($active.completedSteps).Count) step(s) completed, lastError $(if ($active.lastError) { ([string]$active.lastError).TrimEnd('.') } else { 'none' })."
+        }
+        catch {
+            $lines += "$path is unreadable: $($_.Exception.Message)"
+            Add-Summary "The unfinished install transaction at '$path' is unreadable: $($_.Exception.Message)"
+            continue
+        }
+        $lines += $transactionLines
+        Add-Summary $summary
+        break
+    }
+    if (-not $activeFound) {
+        $lines += "active.json is missing at '$activePath', so no install is unfinished."
+    }
+
+    $lines += ''
+    if (Test-Path -LiteralPath $lastPath -PathType Leaf) {
+        try {
+            $last = [IO.File]::ReadAllText($lastPath) | ConvertFrom-Json
+            if ($last -isnot [Management.Automation.PSCustomObject]) { throw 'It is empty or not a JSON object.' }
+            $transactionLines = @(Get-InstallTransactionLine -Path $lastPath -Transaction $last)
+            $summary = "Last completed install transaction: $($last.mode) of $($last.targetVersion), $(@($last.completedSteps).Count) step(s) completed."
+            $lines += $transactionLines
+            Add-Summary $summary
+        }
+        catch {
+            $lines += "$lastPath is unreadable: $($_.Exception.Message)"
+            Add-Summary "The last completed install transaction at '$lastPath' is unreadable: $($_.Exception.Message)"
+        }
+    }
+    else {
+        $lines += "last.json is missing at '$lastPath'."
+    }
+    $lines
+}
+
+Add-Section -Title '3. Toggle state registry store (HKLM\SOFTWARE\Vanta\Services)' -Collector {
+    $storeRoot = 'HKLM:\SOFTWARE\Vanta\Services'
+    if (-not (Test-Path -LiteralPath $storeRoot)) {
+        return "The toggle state store is missing at '$storeRoot'."
+    }
+    foreach ($key in @(Get-ChildItem -LiteralPath $storeRoot | Sort-Object -Property PSChildName)) {
+        $state = Get-RegistryValueOrNull -Path $key.PSPath -Name 'State'
+        '{0,-32} {1}' -f $key.PSChildName, $(if ($null -eq $state) { '(no State value)' } else { $state })
+    }
+}
+
+Add-Section -Title '4. Health check: every recorded toggle and applicable tweak, verified against this machine' -Collector {
+    $healthScript = Join-Path -Path $vantaModules -ChildPath 'Scripts\Entry\Test-VantaHealth.ps1'
+    if (-not (Test-Path -LiteralPath $healthScript -PathType Leaf)) {
+        Add-Summary 'The installed health check is missing, so drift could not be verified.'
+        return "The health check is missing at '$healthScript'."
+    }
+
+    $powerShell = Join-Path -Path ([Environment]::SystemDirectory) -ChildPath 'WindowsPowerShell\v1.0\powershell.exe'
+    # A process rather than a native call, so the check can be stopped at its time
+    # limit. It shares this console, so its output uses this console's encoding. The
+    # check writes to stderr exactly when it cannot run, so that is kept as output and
+    # the exit code decides.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $powerShell
+    $startInfo.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$healthScript`""
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = [Console]::OutputEncoding
+    $startInfo.StandardErrorEncoding = [Console]::OutputEncoding
+    $process = [Diagnostics.Process]::Start($startInfo)
+    try {
+        # Both streams are read while waiting, so a full pipe can't stall the check.
+        $standardOutput = $process.StandardOutput.ReadToEndAsync()
+        $standardError = $process.StandardError.ReadToEndAsync()
+        $finished = $process.WaitForExit($script:HealthCheckSeconds * 1000)
+        if (-not $finished) {
+            # Kill throws when the check ends on its own between the wait and the stop.
+            try { $process.Kill() } catch [InvalidOperationException] { $finished = $true }
+            [void]$process.WaitForExit(5000)
+        }
+        $output = @()
+        foreach ($stream in @($standardOutput, $standardError)) {
+            # A process the check started could keep a pipe open after it is stopped.
+            if ($stream.Wait(2000)) {
+                $text = $stream.Result.TrimEnd("`r", "`n")
+                if ($text) { $output += @($text -split "`r?`n") }
+            }
+        }
+        if (-not $finished) {
+            Add-Summary "Health check: stopped after $script:HealthCheckSeconds seconds without a result, so drift was not verified."
+            return @($output) + @(
+                ''
+                "The health check didn't finish within $script:HealthCheckSeconds seconds, so it was stopped and drift was not verified."
+                'To see it, run VantaModules\Scripts\Entry\Test-VantaHealth.ps1 from an elevated Windows PowerShell prompt.'
+            )
+        }
+        $exitCode = $process.ExitCode
+    }
+    finally {
+        $process.Dispose()
+    }
+    $meaning = switch ($exitCode) {
+        0 { 'no drift' }
+        1 { 'drift found, listed above' }
+        2 { 'the check could not run' }
+        default { 'unexpected exit code' }
+    }
+    Add-Summary "Health check: $meaning (exit code $exitCode)."
+    @($output) + @('', "Health check exit code: $exitCode ($meaning)")
+}
+
+Add-Section -Title '5. Spot checks (imperative work the drift check cannot verify)' -Collector {
+    $programFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
+    $lines = @()
+
+    $lines += '-- Vanta files --'
+    $lines += Test-PathState -Label 'VantaModules' -Path $vantaModules
+    $lines += Test-PathState -Label 'VantaDesktop' -Path $vantaDesktop
+    $lines += Test-PathState -Label 'Toolbox' -Path (Join-Path $vantaModules 'Toolbox')
+    $lines += Test-PathState -Label 'Services backup' -Path (Join-Path $vantaModules 'Other\vantaServices.reg')
+    $lines += Test-PathState -Label 'Health check' -Path (Join-Path $vantaModules 'Scripts\Entry\Test-VantaHealth.ps1')
+    if (Test-Path -LiteralPath $vantaDesktop) {
+        $launchers = @(Get-ChildItem -LiteralPath $vantaDesktop -Recurse -File -Filter '*.cmd')
+        $lines += ('{0,-46} {1}' -f 'VantaDesktop launcher count', $launchers.Count)
+    }
+
+    $lines += ''
+    $lines += '-- Microsoft Edge --'
+    $lines += Test-PathState -Label 'msedge.exe' -Path (Join-Path $programFilesX86 'Microsoft\Edge\Application\msedge.exe')
+    try {
+        $edgePackages = @(Get-AppxPackage -AllUsers -Name 'Microsoft.MicrosoftEdge*' -ErrorAction Stop)
+        $lines += "Installed Edge AppX package count (all users): $($edgePackages.Count)"
+        if ($edgePackages.Count -eq 0) {
+            $lines += 'AppX packages matching Microsoft.MicrosoftEdge*: none'
+        }
+        foreach ($package in $edgePackages) {
+            $lines += "AppX still registered: $($package.PackageFullName)"
+            $lines += "  NonRemovable=$($package.NonRemovable); Status=$($package.Status); InstallLocation=$($package.InstallLocation)"
+        }
+    }
+    catch {
+        $lines += "AppX query failed: $($_.Exception.Message)"
+    }
+    try {
+        $provisionedEdge = @(Get-AppxProvisionedPackage -Online -ErrorAction Stop |
+            Where-Object { $_.DisplayName -like 'Microsoft.MicrosoftEdge*' })
+        $lines += "Provisioned Edge AppX package count: $($provisionedEdge.Count)"
+        foreach ($package in $provisionedEdge) {
+            $lines += "AppX still provisioned: $($package.PackageName)"
+        }
+    }
+    catch {
+        $lines += "Provisioned Edge AppX query failed: $($_.Exception.Message)"
+    }
+    $lines += 'Compare these current inventories with installer warnings after reboot and first sign-in; Windows may finish package removal during sign-in.'
+
+    $lines += ''
+    $lines += '-- Defender and security services --'
+    foreach ($service in 'WinDefend', 'WdNisSvc', 'WdFilter', 'WdBoot', 'Sense', 'wscsvc', 'SecurityHealthService', 'mpssvc') {
+        $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$service"
+        if (Test-Path -LiteralPath $key) {
+            $lines += ('{0,-46} Start={1}' -f "service $service", (Get-RegistryValueOrNull -Path $key -Name 'Start'))
+        }
+        else {
+            $lines += ('{0,-46} absent' -f "service $service")
+        }
+    }
+
+    $lines += ''
+    $lines += '-- Vanta CBS packages --'
+    try {
+        $lines += @(Get-VantaServicingPackageLine)
+    }
+    catch {
+        $lines += "CBS package read failed: $($_.Exception.Message)"
+    }
+
+    $lines += ''
+    $lines += '-- Current user appearance and setup --'
+    foreach ($feature in 'HighContrast', 'Keyboard Response', 'MouseKeys', 'StickyKeys', 'ToggleKeys') {
+        $flagValue = Get-RegistryValueOrNull -Path ("HKCU:\Control Panel\Accessibility\$feature") -Name Flags
+        $lines += "Accessibility $feature Flags: $(if ($null -eq $flagValue) { '(missing)' } else { $flagValue })"
+    }
+    foreach ($value in 'WallPaper', 'WallpaperStyle') {
+        $lines += ('{0,-46} {1}' -f $value, (Get-RegistryValueOrNull -Path 'HKCU:\Control Panel\Desktop' -Name $value))
+    }
+    $lines += ('{0,-46} {1}' -f 'CurrentTheme', (Get-RegistryValueOrNull -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes' -Name 'CurrentTheme'))
+    $lines += Test-PathState -Label 'Vanta desktop shortcut' -Path (Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Vanta.lnk')
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $marker = Get-RegistryValueOrNull -Path 'HKCU:\SOFTWARE\Vanta\UserSetup' -Name $sid
+    $lines += ('{0,-46} {1}' -f 'User setup marker (2 = complete)', $(if ($null -eq $marker) { '(none)' } else { $marker }))
+    $lines
+}
+
+Add-Section -Title '6. Services and drivers' -Collector {
+    $startNames = @{ 0 = 'Boot'; 1 = 'System'; 2 = 'Automatic'; 3 = 'Manual'; 4 = 'Disabled' }
+    $servicesRoot = 'HKLM:\SYSTEM\CurrentControlSet\Services'
+    $running = @{}
+    foreach ($service in @(Get-Service -ErrorAction SilentlyContinue)) {
+        $running[$service.Name] = [string]$service.Status
+    }
+
+    $rows = @()
+    foreach ($key in @(Get-ChildItem -LiteralPath $servicesRoot -ErrorAction Stop)) {
+        $name = [string]$key.PSChildName
+        $start = Get-RegistryValueOrNull -Path $key.PSPath -Name 'Start'
+        if ($null -eq $start) { continue }
+        $type = Get-RegistryValueOrNull -Path $key.PSPath -Name 'Type'
+        $isDriver = ($null -ne $type -and ([int]$type -band 0x0F) -le 2 -and ([int]$type -band 0x30) -eq 0)
+        $startAs = if ($startNames.ContainsKey([int]$start)) { $startNames[[int]$start] } else { "($start)" }
+        $rows += [pscustomobject]@{
+            Name    = $name
+            Kind    = $(if ($isDriver) { 'driver' } else { 'service' })
+            StartAs = $startAs
+            Status  = $(if ($running.ContainsKey($name)) { $running[$name] } else { '' })
+        }
+    }
+
+    $lines = @()
+    $lines += "Total entries: $($rows.Count)"
+    foreach ($group in @($rows | Group-Object -Property StartAs | Sort-Object -Property Name)) {
+        $lines += ('  {0,-12} {1}' -f $group.Name, $group.Count)
+    }
+    $lines += ''
+    $lines += ('{0,-44} {1,-8} {2,-10} {3}' -f 'NAME', 'KIND', 'START', 'STATUS')
+    foreach ($row in @($rows | Sort-Object -Property Name)) {
+        $lines += ('{0,-44} {1,-8} {2,-10} {3}' -f $row.Name, $row.Kind, $row.StartAs, $row.Status)
+    }
+    $lines
+}
+
+Add-Section -Title '7. Installed applications and AppX packages' -Collector {
+    $uninstallRoots = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+    )
+    $applications = @()
+    foreach ($root in $uninstallRoots) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        foreach ($key in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
+            $displayName = Get-RegistryValueOrNull -Path $key.PSPath -Name 'DisplayName'
+            if (-not $displayName) { continue }
+            if ((Get-RegistryValueOrNull -Path $key.PSPath -Name 'SystemComponent') -eq 1) { continue }
+            $applications += [pscustomobject]@{
+                Name      = [string]$displayName
+                Version   = [string](Get-RegistryValueOrNull -Path $key.PSPath -Name 'DisplayVersion')
+                Publisher = [string](Get-RegistryValueOrNull -Path $key.PSPath -Name 'Publisher')
+            }
+        }
+    }
+
+    $lines = @()
+    $unique = @($applications | Sort-Object -Property Name, Version -Unique)
+    $lines += "-- Uninstall entries: $($unique.Count) --"
+    foreach ($application in $unique) {
+        $lines += ('{0,-52} {1,-18} {2}' -f $application.Name, $application.Version, $application.Publisher)
+    }
+
+    $lines += ''
+    try {
+        $packages = @(Get-AppxPackage -ErrorAction Stop | Sort-Object -Property Name)
+        $lines += "-- AppX packages for this user: $($packages.Count) --"
+        foreach ($package in $packages) {
+            $lines += ('{0,-58} {1}' -f $package.Name, $package.Version)
+        }
+    }
+    catch {
+        $lines += "AppX query failed: $($_.Exception.Message)"
+    }
+
+    # Microsoft Store, App Installer and the frameworks Store apps run on, by
+    # version: an old Store can't update apps. Also the toggle record of a Store
+    # the user removed and the machine-wide automatic-update setting.
+    $lines += ''
+    $lines += '-- Microsoft Store and its frameworks for this user --'
+    foreach ($name in @('Microsoft.WindowsStore', 'Microsoft.DesktopAppInstaller', 'Microsoft.StorePurchaseApp',
+            'Microsoft.VCLibs.140.00*', 'Microsoft.UI.Xaml.*', 'Microsoft.NET.Native.Framework.*',
+            'Microsoft.NET.Native.Runtime.*', 'Microsoft.WindowsAppRuntime.*')) {
+        $found = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue | Sort-Object -Property Name, Version)
+        if ($found.Count -eq 0) { $lines += ('{0,-58} not installed' -f $name) }
+        foreach ($package in $found) {
+            $lines += ('{0,-58} {1,-18} {2,-8} {3}' -f $package.Name, $package.Version, $package.Architecture, $package.Status)
+        }
+    }
+    $lines += ('Microsoft Store toggle record (state 0 = removed): {0}' -f (Get-RegistryValueOrNull -Path 'HKLM:\SOFTWARE\Vanta\Services\MicrosoftStore' -Name 'state'))
+    $lines += ('Store app automatic updates, AutoDownload (2 = off): {0}' -f (Get-RegistryValueOrNull -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsStore\WindowsUpdate' -Name 'AutoDownload'))
+    $lines += ('Store policy AutoDownload: {0}; RemoveWindowsStore: {1}; DisableStoreApps: {2}' -f
+        (Get-RegistryValueOrNull -Path 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsStore' -Name 'AutoDownload'),
+        (Get-RegistryValueOrNull -Path 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsStore' -Name 'RemoveWindowsStore'),
+        (Get-RegistryValueOrNull -Path 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsStore' -Name 'DisableStoreApps'))
+
+    # What Get ready's last runs did about the Store: each repair step, and each
+    # Store item with its versions and how it ended.
+    $preparationRoot = Join-Path -Path ([Environment]::GetFolderPath('ProgramFiles')) -ChildPath 'Vanta Setup Recovery\Preparation'
+    $updateLogs = @(Get-ChildItem -LiteralPath $preparationRoot -Recurse -File -Filter 'updates.log' -ErrorAction SilentlyContinue |
+            Sort-Object -Property LastWriteTimeUtc -Descending | Select-Object -First 3)
+    foreach ($log in $updateLogs) {
+        $storeLines = @(Get-Content -LiteralPath $log.FullName -ErrorAction SilentlyContinue | Where-Object { $_ -like 'Microsoft Store: *' })
+        if ($storeLines.Count -eq 0) { continue }
+        $lines += "-- Microsoft Store in $($log.FullName) ($($log.LastWriteTime.ToString('s'))) --"
+        $lines += @($storeLines | Select-Object -Last 80)
+    }
+
+    $lines += ''
+    $provisioned = $null
+    try {
+        $provisioned = @(Get-AppxProvisionedPackage -Online -ErrorAction Stop | Sort-Object -Property DisplayName)
+        $lines += "-- Provisioned AppX packages: $($provisioned.Count) --"
+        foreach ($package in $provisioned) {
+            $lines += ('{0,-58} {1}' -f $package.DisplayName, $package.Version)
+        }
+    }
+    catch {
+        $lines += "Provisioned AppX query failed (needs elevation): $($_.Exception.Message)"
+    }
+
+    # Every package on the installed Vanta's removal list that any account still has,
+    # with each account's install state: what decides whether a removal failed.
+    $lines += ''
+    $definitions = @(Get-AppxRemovalPattern -ModulesPath $vantaModules)
+    if ($definitions.Count -eq 0) {
+        $lines += "-- AppX packages Vanta removes: no removal list under '$vantaModules' --"
+        return $lines
+    }
+    # A family gated by an option that wasn't chosen was kept on purpose.
+    $recorded = Get-RecordedInstallOption
+    $chosen = if ($recorded) { @($recorded.Options) } else { @() }
+    $applied = @($definitions | Where-Object { -not $_.Option -or $chosen -contains $_.Option })
+    $notChosen = @($definitions | Where-Object { $_.Option -and $chosen -notcontains $_.Option })
+    $patterns = @($applied | ForEach-Object { $_.Pattern })
+    # Vanta only warns when one of the others stays, so they don't count as leftovers
+    # in the summary.
+    $required = @($applied | Where-Object { -not $_.IgnoreErrors } | ForEach-Object { $_.Pattern })
+    $lines += "-- AppX packages Vanta removes, still registered for any account ($($patterns.Count) patterns) --"
+    if ($notChosen.Count -gt 0) {
+        $from = if ($recorded) { "in $($recorded.Source)" } else { '(no install options are recorded)' }
+        $lines += "Not checked, as their option wasn't chosen $from`: $(($notChosen | ForEach-Object { "$($_.Pattern) ($($_.Option))" }) -join ', ')"
+    }
+    $registrationsKnown = $true
+    try {
+        $registered = @(Get-AppxPackage -AllUsers -PackageTypeFilter Bundle, Main -ErrorAction Stop)
+    }
+    catch {
+        $lines += "All-users AppX query failed (needs elevation), so this lists only this account's packages, without their accounts: $(($_.Exception.Message -replace '\s+', ' ').Trim())"
+        $registrationsKnown = $false
+        $registered = @(Get-AppxPackage -PackageTypeFilter Bundle, Main -ErrorAction SilentlyContinue)
+    }
+    $leftovers = @($registered | Where-Object {
+            Test-AppxPatternMatch -Identity @($_.Name, $_.PackageFamilyName) -Pattern $patterns
+        } | Sort-Object -Property PackageFullName)
+    $stillProvisioned = @()
+    if ($null -ne $provisioned) {
+        $stillProvisioned = @($provisioned | Where-Object {
+                Test-AppxPatternMatch -Identity @($_.DisplayName, $_.PackageName) -Pattern $patterns
+            })
+    }
+    if ($leftovers.Count -eq 0 -and $stillProvisioned.Count -eq 0) {
+        $lines += 'none'
+    }
+    $warnOnly = ' (Vanta only warns when this one stays)'
+    foreach ($package in $leftovers) {
+        $isRequired = Test-AppxPatternMatch -Identity @($package.Name, $package.PackageFamilyName) -Pattern $required
+        $lines += "Registered: $($package.PackageFullName)$(if (-not $isRequired) { $warnOnly })"
+        $lines += "  status=$($package.Status); bundle=$($package.IsBundle); partially staged=$($package.IsPartiallyStaged); non-removable=$($package.NonRemovable); signature=$($package.SignatureKind)"
+        if (-not $registrationsKnown) { continue }
+        $registrations = @($package.PackageUserInformation)
+        if ($registrations.Count -eq 0) {
+            $lines += '  User registration: none'
+        }
+        foreach ($registration in $registrations) {
+            $lines += "  User registration: $($registration.UserSecurityId.Sid) [$($registration.UserSecurityId.Username)]: $($registration.InstallState)"
+        }
+    }
+    foreach ($package in $stillProvisioned) {
+        $isRequired = Test-AppxPatternMatch -Identity @($package.DisplayName, $package.PackageName) -Pattern $required
+        $lines += "Provisioned: $($package.PackageName)$(if (-not $isRequired) { $warnOnly })"
+    }
+    $requiredRegistered = @($leftovers | Where-Object { Test-AppxPatternMatch -Identity @($_.Name, $_.PackageFamilyName) -Pattern $required }).Count
+    $requiredProvisioned = @($stillProvisioned | Where-Object { Test-AppxPatternMatch -Identity @($_.DisplayName, $_.PackageName) -Pattern $required }).Count
+
+    # Without elevation, the registry still shows which accounts have each package,
+    # including the other accounts and removals Windows hasn't finished.
+    $requiredStored = 0
+    if (-not $registrationsKnown -or $null -eq $provisioned) {
+        $lines += ''
+        $lines += "-- The same packages in the AppX store's registry, for every account (no install states without elevation) --"
+        try {
+            $stored = @(Get-AppxAllUserStorePackage -Pattern $patterns)
+            if ($stored.Count -eq 0) { $lines += 'none' }
+            foreach ($entry in $stored) {
+                $isRequired = Test-AppxPatternMatch -Identity $entry.Package -Pattern $required
+                $lines += "$($entry.Package)$(if (-not $isRequired) { $warnOnly }): $($entry.Places -join '; ')"
+            }
+            $requiredStored = @($stored | Where-Object { $_.Present -and (Test-AppxPatternMatch -Identity $_.Package -Pattern $required) }).Count
+            if ($requiredStored -gt 0) {
+                Add-Summary "AppX packages Vanta removes: $requiredStored still listed, with their files, in the AppX store's registry; section 7 lists the accounts each is listed for."
+            }
+        }
+        catch { $lines += "AppX store read failed: $($_.Exception.Message)" }
+    }
+    # The registry's list is the fuller one when it was read.
+    if ($requiredStored -eq 0 -and $requiredRegistered + $requiredProvisioned -gt 0) {
+        Add-Summary "AppX packages Vanta removes: $requiredRegistered still registered and $requiredProvisioned still provisioned; section 7 lists each with its accounts."
+    }
+    $lines
+}
+
+Add-Section -Title '8. Scheduled tasks' -Collector {
+    $tasks = @(Get-ScheduledTask -ErrorAction Stop)
+    $lines = @()
+    $lines += "Total tasks: $($tasks.Count)"
+    foreach ($group in @($tasks | Group-Object -Property State | Sort-Object -Property Name)) {
+        $lines += ('  {0,-12} {1}' -f $group.Name, $group.Count)
+    }
+
+    $lines += ''
+    $disabled = @($tasks | Where-Object { [string]$_.State -eq 'Disabled' } | Sort-Object -Property TaskPath, TaskName)
+    $lines += "-- Disabled tasks: $($disabled.Count) --"
+    foreach ($task in $disabled) {
+        $lines += "$($task.TaskPath)$($task.TaskName)"
+    }
+    $lines
+}
+
+Add-Section -Title '9. Startup entries and pending reboot' -Collector {
+    $lines = @()
+    $runRoots = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run',
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run',
+        'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run',
+        'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
+    )
+    foreach ($root in $runRoots) {
+        $lines += "-- $root --"
+        if (-not (Test-Path -LiteralPath $root)) {
+            $lines += '  (absent)'
+            continue
+        }
+        $item = Get-ItemProperty -LiteralPath $root -ErrorAction SilentlyContinue
+        $names = @($item.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' } | Sort-Object -Property Name)
+        if ($names.Count -eq 0) {
+            $lines += '  (empty)'
+        }
+        foreach ($value in $names) {
+            $lines += ('  {0,-32} {1}' -f $value.Name, $value.Value)
+        }
+    }
+
+    $lines += ''
+    $lines += '-- Pending reboot --'
+    $lines += ('{0,-52} {1}' -f 'CBS RebootPending', (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'))
+    $lines += ('{0,-52} {1}' -f 'WindowsUpdate RebootRequired', (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'))
+    $pendingRenames = Get-RegistryValueOrNull -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name 'PendingFileRenameOperations'
+    $lines += ('{0,-52} {1}' -f 'PendingFileRenameOperations', $(if ($pendingRenames) { "$(@($pendingRenames).Count) entry(s)" } else { 'none' }))
+    # The sources (every other entry), so a report shows what waits for the restart.
+    $renameEntries = @($pendingRenames)
+    for ($index = 0; $index -lt [Math]::Min($renameEntries.Count, 40); $index += 2) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$renameEntries[$index])) { $lines += "  $($renameEntries[$index])" }
+    }
+    $lines
+}
+
+Add-Section -Title '10. Event log errors and warnings since the install' -Collector {
+    $window = Get-EventWindow
+    $since = $window.Start
+    $lines = @()
+    $lines += "Window: since $since, $($window.Basis) (critical, error and warning; errors only for AppX deployment, with its warnings and information over the install)"
+    $appxLog = 'Microsoft-Windows-AppXDeploymentServer/Operational'
+    $appxErrors = @()
+
+    # A failed Store app update reports only 0x80073CF9 (the install failed); the AppX
+    # deployment log says why. Its warnings are routine, so only its errors are read
+    # over the whole window.
+    foreach ($source in @(
+            @{ LogName = 'System'; Level = 1, 2, 3; Kinds = 'errors and warnings' }
+            @{ LogName = 'Application'; Level = 1, 2, 3; Kinds = 'errors and warnings' }
+            @{ LogName = $appxLog; Level = 1, 2; Kinds = 'errors' }
+        )) {
+        $logName = $source.LogName
+        $lines += ''
+        $lines += "-- $logName --"
+        try {
+            $events = @(Get-WinEvent -FilterHashtable @{ LogName = $logName; Level = $source.Level; StartTime = $since } -MaxEvents $script:EventReadLimit -ErrorAction Stop)
+        }
+        catch {
+            $lines += "  (no matching events, or the log could not be read: $($_.Exception.Message))"
+            continue
+        }
+
+        $lines += "  Total: $($events.Count)"
+        # At the limit, the events read begin later than the window does.
+        $capped = $events.Count -ge $script:EventReadLimit
+        if ($capped) {
+            # Get-WinEvent returns the newest first.
+            $oldestRead = $events[-1].TimeCreated
+            $lines += "  (only the newest $script:EventReadLimit were read, back to $oldestRead; older events in the window were not counted)"
+        }
+        $lines += '  By source and id:'
+        foreach ($group in @($events | Group-Object -Property ProviderName, Id | Sort-Object -Property Count -Descending)) {
+            $lines += ('    {0,-5} {1}' -f $group.Count, $group.Name)
+        }
+        $errorCount = @($events | Where-Object { $_.Level -le 2 }).Count
+        if ($capped) {
+            Add-Summary "$logName log: $errorCount error or critical event(s) among the newest $script:EventReadLimit $($source.Kinds), back to $oldestRead; older events since $since were not read."
+        }
+        elseif ($errorCount -gt 0) {
+            Add-Summary "$logName log: $errorCount error or critical event(s) in the collection window beginning $since."
+        }
+
+        # One example per source and id, newest first. A machine that logs the same
+        # event 150 times would otherwise fill the list with copies of it.
+        $lines += ''
+        $lines += "  Distinct events (up to $script:EventListCount), newest example of each:"
+        $distinct = @($events |
+                Group-Object -Property ProviderName, Id |
+                ForEach-Object {
+                    $newest = @($_.Group | Sort-Object -Property TimeCreated -Descending)[0]
+                    [pscustomobject]@{ Count = $_.Count; Entry = $newest }
+                } |
+                Sort-Object -Property { $_.Entry.TimeCreated } -Descending |
+                Select-Object -First $script:EventListCount)
+        foreach ($item in $distinct) {
+            $entry = $item.Entry
+            $message = ([string]$entry.Message -replace '\s+', ' ')
+            if ($message.Length -gt 300) {
+                $message = $message.Substring(0, 300) + '...'
+            }
+            $lines += ('    {0:yyyy-MM-dd HH:mm:ss} {1,-9} x{2,-4} {3}/{4}: {5}' -f `
+                    $entry.TimeCreated, $entry.LevelDisplayName, $item.Count, $entry.ProviderName, $entry.Id, $message)
+        }
+
+        if ($logName -eq $appxLog) { $appxErrors = $events }
+    }
+
+    # A removal that leaves a package behind logs no error, so the AppX deployment
+    # log's warnings and information are read too, over the install only: they are
+    # many, and later ones would push the install's out of the read limit.
+    $lines += ''
+    $until = if ($window.End) { " until $($window.End)" } else { '' }
+    $lines += "-- $appxLog, warnings and information over the install$until --"
+    $details = @()
+    try {
+        $filter = @{ LogName = $appxLog; Level = 3, 4; StartTime = $since }
+        if ($window.End) { $filter.EndTime = $window.End }
+        $details = @(Get-WinEvent -FilterHashtable $filter -MaxEvents $script:EventReadLimit -ErrorAction Stop)
+        $lines += "  Total: $($details.Count)"
+        if ($details.Count -ge $script:EventReadLimit) {
+            $lines += "  (only the newest $script:EventReadLimit were read, back to $($details[-1].TimeCreated))"
+            Add-Summary "$appxLog log: only the newest $script:EventReadLimit warnings and information over the install were read, back to $($details[-1].TimeCreated)."
+        }
+    }
+    catch {
+        $lines += "  (no matching events, or the log could not be read: $($_.Exception.Message))"
+    }
+
+    # Grouping hides which package each deployment event was about, so the events
+    # naming a package Vanta removes are listed one by one. They are matched on the
+    # event's data, where Windows records the package's full name as it is.
+    try {
+        $recorded = Get-RecordedInstallOption
+        $chosen = if ($recorded) { @($recorded.Options) } else { @() }
+        $names = @(Get-AppxRemovalPattern -ModulesPath $vantaModules |
+                Where-Object { -not $_.Option -or $chosen -contains $_.Option } |
+                ForEach-Object { ($_.Pattern -split '[_*]')[0] } |
+                Where-Object { $_ } | Select-Object -Unique)
+        if ($names.Count -gt 0) {
+            $named = @(@($appxErrors) + @($details) | Where-Object {
+                    $dataProperty = $_.PSObject.Properties['Properties']
+                    $data = if ($null -ne $dataProperty -and $null -ne $dataProperty.Value) {
+                        (@($dataProperty.Value) | ForEach-Object { [string]$_.Value }) -join ' '
+                    }
+                    else { [string]$_.Message }
+                    @($names | Where-Object { $data.IndexOf($_, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -gt 0
+                } | Sort-Object -Property TimeCreated -Descending | Select-Object -First $script:EventListCount)
+            $lines += ''
+            $lines += "  Events that name a package Vanta removes (newest $($named.Count), up to $script:EventListCount):"
+            foreach ($entry in $named) {
+                $message = ([string]$entry.Message -replace '\s+', ' ').Trim()
+                if ($message.Length -gt 400) {
+                    $message = $message.Substring(0, 400) + '...'
+                }
+                $lines += ('    {0:yyyy-MM-dd HH:mm:ss} {1,-11} {2}: {3}' -f $entry.TimeCreated, $entry.LevelDisplayName, $entry.Id, $message)
+            }
+        }
+    }
+    catch { $lines += "  (events naming removed packages could not be listed: $($_.Exception.Message))" }
+    $lines
+}
+
+Add-Section -Title '11. Vanta logs' -Collector {
+    $lines = @()
+    $logRoot = Join-Path -Path $vantaModules -ChildPath 'Logs\install'
+    if (Test-Path -LiteralPath $logRoot -PathType Container) {
+        $logs = @(Get-ChildItem -LiteralPath $logRoot -File |
+                Sort-Object -Property LastWriteTimeUtc -Descending | Select-Object -First 2)
+        if ($logs.Count -eq 0) {
+            $lines += "(no files under $logRoot)"
+        }
+        foreach ($log in $logs) {
+            $lines += Get-FileTail -Path $log.FullName -Count $script:LogTailLines
+            $lines += ''
+        }
+    }
+    else {
+        $lines += "(missing: $logRoot)"
+    }
+
+    $userLogRoot = Join-Path -Path $env:LOCALAPPDATA -ChildPath 'Vanta\Logs'
+    $userInstallLogRoot = Join-Path -Path $userLogRoot -ChildPath 'install'
+    if (Test-Path -LiteralPath $userInstallLogRoot -PathType Container) {
+        foreach ($log in @(Get-ChildItem -LiteralPath $userInstallLogRoot -File |
+                    Sort-Object -Property LastWriteTimeUtc -Descending | Select-Object -First 2)) {
+            $lines += Get-FileTail -Path $log.FullName -Count $script:LogTailLines
+            $lines += ''
+        }
+    }
+    if (Test-Path -LiteralPath $userLogRoot -PathType Container) {
+        $userLog = @(Get-ChildItem -LiteralPath $userLogRoot -File -Filter '*-new-user-setup-*.log' |
+                Sort-Object -Property LastWriteTimeUtc -Descending | Select-Object -First 1)
+        foreach ($log in $userLog) {
+            $lines += Get-FileTail -Path $log.FullName -Count $script:LogTailLines
+        }
+    }
+    else {
+        $lines += "(missing: $userLogRoot)"
+    }
+    $lines
+}
+
+Add-Section -Title '12. Windows version transition' -Collector {
+    # What Vanta Manager changed to move Windows to another release, what Windows
+    # Update and servicing reported, and the state around it. Read only.
+    $lines = @()
+    $windows = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+    $lines += "Windows: $($windows.CurrentBuildNumber).$($windows.UBR) $($windows.DisplayVersion) $($windows.EditionID) $($windows.InstallationType)"
+    $recordPath = 'HKLM:\SOFTWARE\Vanta\WindowsTransition'
+    foreach ($name in @('Journal', 'LastResult')) {
+        $value = Get-RegistryValueOrNull -Path $recordPath -Name $name
+        if ($null -eq $value) {
+            $lines += "${name}: (none)"
+            continue
+        }
+        $lines += "${name}:"
+        try { $lines += (([string]$value | ConvertFrom-Json) | ConvertTo-Json -Depth 8) }
+        catch { $lines += "  (not JSON) $value" }
+        if ($name -eq 'Journal') { Add-Summary 'Vanta Manager has Windows Update settings changed for an update and not yet put back.' }
+    }
+    # The copy that stands in for the record when a rebuilt Windows lost the registry.
+    $copy = Join-Path -Path ([Environment]::GetFolderPath('ProgramFiles')) -ChildPath 'Vanta Setup Recovery\WindowsTransition\journal.json'
+    if (Test-Path -LiteralPath $copy -PathType Leaf) {
+        $lines += "Copy of the record ($((Get-Item -LiteralPath $copy).LastWriteTime.ToString('s'))):"
+        try { $lines += ((Get-Content -LiteralPath $copy -Raw | ConvertFrom-Json) | ConvertTo-Json -Depth 8) }
+        catch { $lines += "  (unreadable: $($_.Exception.Message))" }
+    }
+    else { $lines += 'Copy of the record: (none)' }
+    $journalText = Get-RegistryValueOrNull -Path $recordPath -Name 'Journal'
+    if ($null -ne $journalText) {
+        try {
+            $journal = [string]$journalText | ConvertFrom-Json
+            $rebuild = $journal.PSObject.Properties['rebuild']
+            $decision = if ($null -ne $rebuild -and $null -ne $rebuild.Value) {
+                "Rebuild decision: rebuilt=$($rebuild.Value.rebuilt) signals=$(@($rebuild.Value.signals) -join ',') at $($rebuild.Value.checkedAt)"
+            }
+            else { 'Rebuild decision: (not made yet)' }
+            $lines += $decision
+            if ($null -ne $rebuild -and $null -ne $rebuild.Value -and $rebuild.Value.rebuilt) { Add-Summary 'Windows rebuilt itself during the move; the Vanta install runs as a Rebase.' }
+        }
+        catch { $lines += "Rebuild decision: (record not JSON: $($_.Exception.Message))" }
+    }
+    $reoffered = Get-RegistryValueOrNull -Path 'HKLM:\SOFTWARE\Vanta\Preparation' -Name 'Reoffered'
+    $lines += "Updates Get ready no longer waits for (offered again after they installed, or drivers the device doesn't need): $(if ($null -eq $reoffered) { '(none)' } else { $reoffered })"
+    $lines += '-- Setup traces of a rebuild --'
+    $systemRoot = Split-Path -Path $windir -Parent
+    $old = Join-Path -Path $systemRoot -ChildPath 'Windows.old\Windows'
+    $lines += "Windows.old\Windows: $(if (Test-Path -LiteralPath $old) { if (@(Get-ChildItem -LiteralPath $old -Force -ErrorAction SilentlyContinue | Select-Object -First 1).Count -gt 0) { 'populated' } else { 'empty' } } else { 'missing' })"
+    $bt = Join-Path -Path $systemRoot -ChildPath '$WINDOWS.~BT'
+    $lines += "`$WINDOWS.~BT: $(if (Test-Path -LiteralPath $bt) { 'present' } else { 'missing' })"
+    foreach ($panther in @((Join-Path -Path $windir -ChildPath 'Panther'), (Join-Path -Path $bt -ChildPath 'Sources\Panther'))) {
+        foreach ($file in @('setupact.log', 'setuperr.log')) {
+            $path = Join-Path -Path $panther -ChildPath $file
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+            $lines += "$path (written $((Get-Item -LiteralPath $path).LastWriteTime.ToString('s'))):"
+            try { $lines += Get-FileTail -Path $path -Count 200 }
+            catch { $lines += "(unreadable: $path`: $($_.Exception.Message))" }
+        }
+    }
+    $lines += '-- Windows Update policy, pause and service values --'
+    foreach ($path in @(
+            'SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
+            'SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+            'SOFTWARE\Microsoft\WindowsUpdate\UpdatePolicy\Settings'
+            'SOFTWARE\Microsoft\WindowsUpdate\UpdatePolicy\PolicyState'
+            'SOFTWARE\Microsoft\WindowsUpdate\UX\Settings'
+        )) {
+        $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($path, $false)
+        if ($null -eq $key) {
+            $lines += "${path}: (missing)"
+            continue
+        }
+        try {
+            foreach ($name in @($key.GetValueNames() | Sort-Object)) {
+                $lines += "  $path\$name = $($key.GetValueKind($name)) $($key.GetValue($name))"
+            }
+        }
+        finally { $key.Dispose() }
+    }
+    $pages = Get-RegistryValueOrNull -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' -Name 'SettingsPageVisibility'
+    $lines += "SettingsPageVisibility: $pages"
+    foreach ($name in @('wuauserv', 'UsoSvc', 'WaaSMedicSvc', 'BITS', 'CryptSvc', 'TrustedInstaller', 'DoSvc')) {
+        $start = Get-RegistryValueOrNull -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$name" -Name 'Start'
+        $status = (Get-Service -Name $name -ErrorAction SilentlyContinue).Status
+        $lines += "  service $name start=$start status=$status"
+    }
+    foreach ($taskName in @('sih', 'sihboot')) {
+        $task = Get-ScheduledTask -TaskPath '\Microsoft\Windows\WindowsUpdate\' -TaskName $taskName -ErrorAction SilentlyContinue
+        $lines += "  task WindowsUpdate\$taskName state=$(if ($task) { $task.State } else { 'missing' })"
+    }
+    $lines += '-- Vanta servicing packages --'
+    try { $lines += @(Get-VantaServicingPackageLine | ForEach-Object { "  $_" }) }
+    catch { $lines += "(servicing packages unreadable: $($_.Exception.Message))" }
+    $lines += '-- Windows Update history (newest 30) --'
+    try {
+        $searcher = (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher()
+        $count = [Math]::Min([int]$searcher.GetTotalHistoryCount(), 30)
+        if ($count -gt 0) {
+            foreach ($entry in $searcher.QueryHistory(0, $count)) {
+                $lines += ('  {0:yyyy-MM-dd HH:mm} result={1} 0x{2:X8} {3}' -f $entry.Date, $entry.ResultCode, [int]$entry.HResult, $entry.Title)
+            }
+        }
+    }
+    catch { $lines += "(history unavailable: $($_.Exception.Message))" }
+    # The servicing logs' tails are read first: the store check below writes to both
+    # and would push out what the failed Vanta or Windows run left there.
+    $logTails = foreach ($log in @(
+            @{ Path = (Join-Path -Path $windir -ChildPath 'Logs\CBS\CBS.log'); Lines = 300 }
+            @{ Path = (Join-Path -Path $windir -ChildPath 'Logs\DISM\dism.log'); Lines = 200 }
+        )) {
+        try { Get-FileTail -Path $log.Path -Count $log.Lines }
+        catch { "(unreadable: $($log.Path): $($_.Exception.Message))" }
+    }
+    # The component store's state and what Windows's newest full store check found.
+    try { $lines += "Component store: $((Repair-WindowsImage -Online -CheckHealth -ErrorAction Stop).ImageHealthState)" }
+    catch { $lines += ("Component store: (check failed, 0x{0:X8}: {1})" -f $_.Exception.HResult, $_.Exception.Message) }
+    try {
+        $cbsLog = Join-Path -Path $windir -ChildPath 'Logs\CBS\CBS.log'
+        $stream = [IO.FileStream]::new($cbsLog, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]'ReadWrite, Delete')
+        try {
+            [void]$stream.Seek([Math]::Max(0, $stream.Length - 16MB), [IO.SeekOrigin]::Begin)
+            $cbsTail = [IO.StreamReader]::new($stream).ReadToEnd() -split "`r?`n"
+        }
+        finally { $stream.Dispose() }
+        $start = -1
+        for ($i = $cbsTail.Count - 1; $i -ge 0; $i--) { if ($cbsTail[$i] -match 'Checking System Update Readiness\.') { $start = $i; break } }
+        if ($start -lt 0) { $lines += 'Newest store check: (none in the servicing log)' }
+        else {
+            $lines += '-- Newest store check in CBS.log --'
+            for ($i = $start; $i -lt [Math]::Min($cbsTail.Count, $start + 60); $i++) {
+                $lines += "  $($cbsTail[$i])"
+                if ($cbsTail[$i] -match 'Total Operation Time') { break }
+            }
+        }
+    }
+    catch { $lines += "Newest store check: (unreadable: $($_.Exception.Message))" }
+    $lines += @($logTails)
+    foreach ($logName in @('Microsoft-Windows-WindowsUpdateClient/Operational', 'Setup')) {
+        $lines += "-- $logName (newest $script:EventListCount) --"
+        try {
+            foreach ($updateEvent in @(Get-WinEvent -LogName $logName -MaxEvents $script:EventListCount -ErrorAction Stop)) {
+                $lines += ('  {0:yyyy-MM-dd HH:mm:ss} {1} {2}: {3}' -f $updateEvent.TimeCreated, $updateEvent.Id, $updateEvent.LevelDisplayName, (($updateEvent.Message -replace '\s+', ' ').Trim()))
+            }
+        }
+        catch { $lines += "(no events or log unavailable: $($_.Exception.Message))" }
+    }
+    $lines
+}
+
+if ($RcDiagnostics) {
+    Add-Section -Title '13. RC diagnostics: Windows Search configuration' -Collector {
+        $lines = @()
+        $service = Get-Service -Name WSearch -ErrorAction Stop
+        $lines += "WSearch status: $($service.Status)"
+        $roots = @(
+            'HKLM:\SOFTWARE\Microsoft\Windows Search'
+            'HKLM:\SOFTWARE\Microsoft\Windows Search\Gather\Windows\SystemIndex'
+            'HKLM:\SOFTWARE\Microsoft\Windows Search\Gather\Windows\SystemIndex\Sites\LocalHost'
+            'HKLM:\SOFTWARE\Microsoft\Windows Search\CrawlScopeManager\Windows\SystemIndex'
+            'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search'
+            'HKLM:\SOFTWARE\Microsoft\Windows Search\CurrentPolicies'
+            'HKLM:\SOFTWARE\Vanta\Services\PowerSaving'
+            'HKLM:\SOFTWARE\Vanta\Search'
+        )
+        # Values only for these: their branches are too large (the Search store) or unrelated.
+        $valueOnlyRoots = @(
+            'HKLM:\SOFTWARE\Microsoft\Windows Search'
+            'HKLM:\SOFTWARE\Microsoft\Windows Search\Gather\Windows\SystemIndex'
+            'HKLM:\SOFTWARE\Vanta\Services\PowerSaving'
+        )
+        $maxKeys = 80
+        foreach ($root in $roots) {
+            $lines += "-- $root --"
+            if (-not (Test-Path -LiteralPath $root)) {
+                $lines += '(missing)'
+                continue
+            }
+            try {
+                $keys = @(Get-Item -LiteralPath $root -ErrorAction Stop)
+                if ($root -notin $valueOnlyRoots) {
+                    $children = @(Get-ChildItem -LiteralPath $root -Recurse -ErrorAction Stop | Select-Object -First ($maxKeys + 1))
+                    if ($children.Count -gt $maxKeys) { $lines += "(branch truncated after $maxKeys child keys)" }
+                    $keys += @($children | Select-Object -First $maxKeys)
+                }
+                foreach ($key in $keys) {
+                    try {
+                        $lines += "[$($key.Name)]"
+                        foreach ($name in @($key.GetValueNames() | Sort-Object)) {
+                            $value = $key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                            if ($value -is [byte[]]) {
+                                $lines += ('  {0} (Binary) = {1} bytes' -f $name, $value.Length)
+                                continue
+                            }
+                            $lines += ('  {0} ({1}) = {2}' -f $name, $key.GetValueKind($name), ($value | ConvertTo-Json -Compress -Depth 4))
+                        }
+                    }
+                    finally { $key.Dispose() }
+                }
+            }
+            catch { $lines += "(could not read branch: $($_.Exception.Message))" }
+        }
+        $lines
+    }
+
+    Add-Section -Title '14. RC diagnostics: PcaPatchDbTask' -Collector {
+        $lines = @()
+        $taskPath = '\Microsoft\Windows\Application Experience\'
+        $taskName = 'PcaPatchDbTask'
+        try {
+            $task = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+            $info = Get-ScheduledTaskInfo -InputObject $task -ErrorAction Stop
+            $lines += "State: $($task.State); Enabled: $($task.Settings.Enabled)"
+            $lines += "Last run: $($info.LastRunTime); Result: $($info.LastTaskResult); Next run: $($info.NextRunTime)"
+            $lines += Export-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+        }
+        catch { $lines += "(task inspection failed: $($_.Exception.Message))" }
+        $logName = 'Microsoft-Windows-TaskScheduler/Operational'
+        try {
+            $log = Get-WinEvent -ListLog $logName -ErrorAction Stop
+            $lines += "Task Scheduler operational log enabled: $($log.IsEnabled)"
+            # Collect only this task's recent history, retaining event data such as
+            # update callers instead of the report's grouped/truncated messages.
+            $xpath = "*[System[TimeCreated[timediff(@SystemTime) <= 86400000]]] and *[EventData[Data[@Name='TaskName']='${taskPath}${taskName}']]"
+            $events = @(Get-WinEvent -LogName $logName -FilterXPath $xpath -MaxEvents $script:EventListCount -ErrorAction Stop)
+            foreach ($taskEvent in $events) {
+                $lines += $taskEvent.ToXml()
+            }
+        }
+        catch { $lines += "(no matching task history, or history unavailable: $($_.Exception.Message))" }
+        # Security events can include the client PID for task updates when auditing
+        # was already enabled. Reading this log does not change audit policy.
+        try {
+            $xpath = "*[System[(EventID=4700 or EventID=4701 or EventID=4702) and TimeCreated[timediff(@SystemTime) <= 86400000]]] and *[EventData[Data[@Name='TaskName']='${taskPath}${taskName}']]"
+            $events = @(Get-WinEvent -LogName Security -FilterXPath $xpath -MaxEvents $script:EventListCount -ErrorAction Stop)
+            $lines += '-- Security task-change audit events --'
+            foreach ($taskEvent in $events) { $lines += $taskEvent.ToXml() }
+        }
+        catch { $lines += "(no matching task audit events, or auditing unavailable: $($_.Exception.Message))" }
+        $taskFile = Join-Path $windir 'System32\Tasks\Microsoft\Windows\Application Experience\PcaPatchDbTask'
+        if (Test-Path -LiteralPath $taskFile -PathType Leaf) {
+            $file = Get-Item -LiteralPath $taskFile -Force
+            $lines += "Task file modified UTC: $($file.LastWriteTimeUtc.ToString('o'))"
+        }
+        $pca = Get-CimInstance -ClassName Win32_Service -Filter "Name='PcaSvc'" -ErrorAction Stop
+        $lines += "PcaSvc: state=$($pca.State); start=$($pca.StartMode); PID=$($pca.ProcessId)"
+        $disablePca = Get-RegistryValueOrNull -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppCompat' -Name DisablePCA
+        $lines += "Machine DisablePCA policy: $disablePca"
+        $lines
+    }
+
+    Add-Section -Title '15. RC diagnostics: OneDrive shell extension' -Collector {
+        $lines = @()
+        $root = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Microsoft\OneDrive'
+        $files = @()
+        if (Test-Path -LiteralPath $root -PathType Container) {
+            # OneDrive keeps FileSyncShell64.dll in each version directory directly below this root.
+            foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction Stop)) {
+                if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+                $filePath = Join-Path $directory.FullName 'FileSyncShell64.dll'
+                if (Test-Path -LiteralPath $filePath -PathType Leaf) {
+                    $files += Get-Item -LiteralPath $filePath -Force -ErrorAction Stop
+                }
+            }
+        }
+        if ($files.Count -eq 0) { $lines += '(no FileSyncShell64.dll in the current user OneDrive version directories)' }
+        foreach ($file in $files) {
+            $lines += "File: $($file.FullName); Attributes: $($file.Attributes); Length: $($file.Length)"
+            try {
+                $acl = Get-Acl -LiteralPath $file.FullName -ErrorAction Stop
+                $lines += "Owner: $($acl.Owner)"
+                $lines += "SDDL: $($acl.Sddl)"
+            }
+            catch { $lines += "(ACL unavailable: $($_.Exception.Message))" }
+        }
+        $unreadable = 0
+        $holders = 0
+        foreach ($process in @(Get-Process -ErrorAction Stop)) {
+            try {
+                foreach ($module in @($process.Modules)) {
+                    if ($module.ModuleName -ieq 'FileSyncShell64.dll') {
+                        $holders++
+                        $lines += "Loaded by $($process.ProcessName) PID=$($process.Id) session=$($process.SessionId): $($module.FileName)"
+                    }
+                }
+            }
+            catch { $unreadable++ }
+            finally { $process.Dispose() }
+        }
+        $lines += "Loaded-module matches: $holders; processes whose modules could not be inspected: $unreadable"
+        $lines += 'A loaded-module match can explain deletion denial. No match does not exclude an open file handle or an earlier lock.'
+        $lines
+    }
+
+    Add-Section -Title '16. RC diagnostics: WebView2 runtime and Widgets' -Collector {
+        $lines = @()
+        # Microsoft documents pv under this client ID as Evergreen detection.
+        # Edge Stable and Microsoft.Win32WebViewHost are not substitutes for it.
+        $clientId = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+        foreach ($root in @(
+                "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$clientId"
+                "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$clientId"
+                "HKCU:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$clientId"
+            )) {
+            $lines += "-- $root --"
+            try {
+                if (-not (Test-Path -LiteralPath $root)) { $lines += '(missing)'; continue }
+                $key = Get-Item -LiteralPath $root -ErrorAction Stop
+                try {
+                    foreach ($name in @('pv', 'name', 'location')) {
+                        $lines += ('  {0} = {1}' -f $name, $key.GetValue($name, '(missing)'))
+                    }
+                }
+                finally { $key.Dispose() }
+            }
+            catch { $lines += "(registration read failed: $($_.Exception.Message))" }
+        }
+        $baseFolders = @(
+            [Environment]::GetFolderPath('ProgramFilesX86')
+            [Environment]::GetFolderPath('ProgramFiles')
+            [Environment]::GetFolderPath('LocalApplicationData')
+        ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+        foreach ($baseFolder in $baseFolders) {
+            $runtimeRoot = Join-Path $baseFolder 'Microsoft\EdgeWebView\Application'
+            $lines += "-- $runtimeRoot --"
+            try {
+                if (-not (Test-Path -LiteralPath $runtimeRoot)) { $lines += '(missing)'; continue }
+                $runtimeItem = Get-Item -LiteralPath $runtimeRoot -Force
+                $lines += "Root attributes: $($runtimeItem.Attributes)"
+                if ($runtimeItem.PSObject.Properties['Target']) { $lines += "Root target: $($runtimeItem.Target)" }
+                $versions = @(Get-ChildItem -LiteralPath $runtimeRoot -Directory -ErrorAction Stop |
+                        Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+                        Sort-Object Name -Descending | Select-Object -First 5)
+                if ($versions.Count -eq 0) { $lines += '(no runtime version directories)' }
+                foreach ($version in $versions) {
+                    $lines += "Version directory: $($version.FullName); attributes: $($version.Attributes)"
+                    if ($version.PSObject.Properties['Target']) { $lines += "Version target: $($version.Target)" }
+                    foreach ($fileName in @('msedgewebview2.exe', 'msedge.dll', 'icudtl.dat')) {
+                        $filePath = Join-Path $version.FullName $fileName
+                        if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) {
+                            $lines += "MISSING: $filePath"
+                            continue
+                        }
+                        $file = Get-Item -LiteralPath $filePath -Force
+                        $lines += "Present: $filePath; bytes=$($file.Length); version=$($file.VersionInfo.FileVersion)"
+                        $lines += "ACL: $((Get-Acl -LiteralPath $filePath).Sddl)"
+                    }
+                }
+            }
+            catch { $lines += "(runtime inspection failed: $($_.Exception.Message))" }
+        }
+        try {
+            $packages = @(Get-AppxPackage -AllUsers -ErrorAction Stop |
+                    Where-Object { $_.Name -match 'WebExperience|WidgetsPlatformRuntime|StartExperiences' })
+            if ($packages.Count -eq 0) { $lines += '(no Widgets packages registered)' }
+            foreach ($package in $packages) {
+                $lines += "Widget package: $($package.PackageFullName); status=$($package.Status)"
+                $lines += "Install location: $($package.InstallLocation); partially staged=$($package.IsPartiallyStaged)"
+                foreach ($registration in @($package.PackageUserInformation)) {
+                    $lines += "User registration: $registration"
+                }
+                foreach ($dependency in @($package.Dependencies)) {
+                    $lines += "Dependency: $($dependency.PackageFullName); status=$($dependency.Status)"
+                }
+            }
+        }
+        catch { $lines += "(widget package inspection failed: $($_.Exception.Message))" }
+        foreach ($process in @(Get-Process -Name 'Widgets', 'WidgetService', 'msedgewebview2' -ErrorAction SilentlyContinue)) {
+            try { $lines += "Process: $($process.ProcessName); PID=$($process.Id); session=$($process.SessionId); path=$($process.Path)" }
+            catch { $lines += "(process inspection failed: $($_.Exception.Message))" }
+            finally { $process.Dispose() }
+        }
+        foreach ($logPath in @(
+                (Join-Path $windir 'Temp\msedge_installer.log')
+                (Join-Path ([IO.Path]::GetTempPath()) 'msedge_installer.log')
+                (Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'Microsoft\EdgeUpdate\Log\MicrosoftEdgeUpdate.log')
+            ) | Select-Object -Unique) {
+            $lines += Get-FileTail -Path $logPath -Count $script:LogTailLines
+        }
+        $lines += 'Registration and file presence do not prove the runtime can initialize. An install-time popup needs its timing or installer-log evidence to establish the cause.'
+        $lines
+    }
+
+    Add-Section -Title '17. RC diagnostics: local Group Policy processing' -Collector {
+        $lines = @()
+        $since = if ($script:InstalledAt) {
+            $script:InstalledAt.AddMinutes(-30)
+        }
+        else {
+            (Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime
+        }
+        $extension = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\GPExtensions\{7933F41E-56F8-41d6-A31C-4148A711EE93}'
+        $lines += "-- Search policy extension: $extension --"
+        if (Test-Path -LiteralPath $extension) {
+            $key = Get-Item -LiteralPath $extension
+            try {
+                foreach ($name in $key.GetValueNames()) {
+                    $lines += ('  {0} = {1}' -f $name, $key.GetValue($name))
+                }
+            }
+            finally { $key.Dispose() }
+        }
+        else { $lines += '(missing)' }
+        foreach ($relativePath in @('System32\GroupPolicy\Machine\Registry.pol', 'System32\GroupPolicy\gpt.ini')) {
+            $policyPath = Join-Path $windir $relativePath
+            if (Test-Path -LiteralPath $policyPath) {
+                $file = Get-Item -LiteralPath $policyPath
+                $lines += "Policy file: $policyPath; bytes=$($file.Length); modified=$($file.LastWriteTime.ToString('o'))"
+                if ($file.Extension -eq '.ini') { $lines += Get-Content -LiteralPath $policyPath }
+            }
+            else { $lines += "Policy file missing: $policyPath" }
+        }
+        try {
+            $events = @(Get-WinEvent -FilterHashtable @{
+                    LogName = 'Microsoft-Windows-GroupPolicy/Operational'
+                    StartTime = $since
+                } -MaxEvents $script:EventListCount -ErrorAction Stop)
+            foreach ($policyEvent in $events) {
+                $lines += ('{0:o} ID={1}: {2}' -f $policyEvent.TimeCreated, $policyEvent.Id, $policyEvent.Message)
+            }
+        }
+        catch { $lines += "(policy event collection unavailable: $($_.Exception.Message))" }
+        $lines
+    }
+
+    Add-Section -Title '18. RC diagnostics: effective Search scope' -Collector {
+        $manifest = Join-Path $vantaModules 'Scripts\Modules\Vanta.Search\Vanta.Search.psd1'
+        if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
+            return "(Vanta.Search is missing at '$manifest')"
+        }
+        Import-Module -Name $manifest -ErrorAction Stop
+        $paths = @(
+            (Join-Path $vantaDesktop '__vanta_scope_probe__.lnk')
+            (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) '__vanta_scope_probe__.lnk')
+            (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Documents\__vanta_scope_probe__.txt')
+            (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) '__vanta_scope_probe__.txt')
+        )
+        'Effective inclusion from Windows Search Crawl Scope Manager (probe files are not created):'
+        Get-VantaIndexScopeState -Path $paths | ForEach-Object {
+            '  Included={0}: {1}' -f $_.Included, $_.Path
+        }
+        'Minimal expects VantaDesktop/Start Menu included and both user paths excluded. Full expects Documents included and AppData excluded. Disabled Search may not answer.'
+    }
+
+    Add-Section -Title '19. RC diagnostics: BITS service failures' -Collector {
+        $lines = @()
+        $since = if ($script:InstalledAt) { $script:InstalledAt.AddMinutes(-30) }
+        else { (Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime }
+        $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='BITS'" -ErrorAction Stop
+        $lines += "BITS: state=$($service.State); start=$($service.StartMode); PID=$($service.ProcessId); exit=$($service.ExitCode); path=$($service.PathName)"
+        $parameters = 'HKLM:\SYSTEM\CurrentControlSet\Services\BITS\Parameters'
+        $dll = Get-RegistryValueOrNull -Path $parameters -Name ServiceDll
+        $lines += "ServiceDll: $dll"
+        if ($dll) {
+            $dllPath = [Environment]::ExpandEnvironmentVariables([string]$dll)
+            $lines += "ServiceDll exists: $([IO.File]::Exists($dllPath))"
+        }
+        foreach ($filter in @(
+                @{ LogName = 'System'; ProviderName = 'Service Control Manager'; Id = @(7031, 7034); StartTime = $since }
+                @{ LogName = 'Application'; Id = @(1000, 1001); StartTime = $since }
+                @{ LogName = 'Microsoft-Windows-Bits-Client/Operational'; StartTime = $since }
+            )) {
+            $lines += "-- $($filter.LogName), since $($since.ToString('o')) --"
+            try {
+                if ($filter.LogName -like '*/Operational') {
+                    $log = Get-WinEvent -ListLog $filter.LogName -ErrorAction Stop
+                    $lines += "Log enabled: $($log.IsEnabled)"
+                }
+                foreach ($failureEvent in @(Get-WinEvent -FilterHashtable $filter -MaxEvents $script:EventListCount -ErrorAction Stop)) {
+                    # Preserve timestamps, process IDs, faulting modules and event
+                    # data for correlation with installer logs, without grouping.
+                    $lines += $failureEvent.ToXml()
+                    $lines += $failureEvent.Message
+                }
+            }
+            catch { $lines += "(no matching events or log unavailable: $($_.Exception.Message))" }
+        }
+        $lines
+    }
+}
+
+Add-Line ''
+Add-Line ('=' * 78)
+Add-Line 'End of report'
+
+$header = New-Object System.Collections.Generic.List[string]
+$header.Add('Vanta install report')
+$header.Add(('Generated {0:yyyy-MM-dd HH:mm:ss} on {1}' -f (Get-Date), $env:COMPUTERNAME))
+$header.Add('')
+$header.Add('SUMMARY')
+$header.Add(('-' * 78))
+if ($script:Summary.Count -eq 0) {
+    $header.Add('(nothing summarized)')
+}
+foreach ($line in $script:Summary) {
+    $header.Add("- $line")
+}
+
+$directory = Split-Path -Path $OutputPath -Parent
+if ($directory -and -not (Test-Path -LiteralPath $directory -PathType Container)) {
+    New-Item -Path $directory -ItemType Directory -Force | Out-Null
+}
+$allLines = @($header) + @($report)
+[IO.File]::WriteAllLines($OutputPath, [string[]]$allLines, $script:Utf8)
+# The parameter, so a partial report that stopped updating is still removed, best effort.
+if ($PartialPath) {
+    Remove-Item -LiteralPath $PartialPath -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host ''
+Write-Host 'Vanta install report written to:'
+Write-Host "  $OutputPath"
+foreach ($line in $script:Summary) {
+    Write-Host "  - $line"
+}

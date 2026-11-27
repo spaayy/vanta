@@ -1,0 +1,915 @@
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSReviewUnusedParameter',
+    '',
+    Justification = 'The components-phase harness stubs declare the same parameters as the commands they shadow.'
+)]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSAvoidOverwritingBuiltInCmdlets',
+    '',
+    Justification = 'The components-phase harness shadows registry and scheduled-task cmdlets only while executing the phase under test.'
+)]
+param()
+
+BeforeAll {
+    . (Join-Path $PSScriptRoot 'VantaTestHost.ps1')
+    $script:componentsPhase = Join-Path -Path $script:VantaTestScriptsRoot `
+        -ChildPath 'Install\Phases\Invoke-ComponentsPhase.ps1'
+    $script:oneDriveUserCleanup = Join-Path -Path $script:VantaTestScriptsRoot `
+        -ChildPath 'Operations\Remove-OneDriveCurrentUserData.ps1'
+    $script:edgeUserCleanup = Join-Path -Path $script:VantaTestScriptsRoot `
+        -ChildPath 'Operations\Remove-EdgeCurrentUserData.ps1'
+
+    $tokens = $null
+    $errors = $null
+    $script:oneDriveAst = [Management.Automation.Language.Parser]::ParseFile(
+        $script:oneDriveUserCleanup,
+        [ref]$tokens,
+        [ref]$errors
+    )
+    if (@($errors).Count -ne 0) {
+        throw "The OneDrive exact-user cleanup script has parse errors: $($errors -join '; ')"
+    }
+
+    foreach ($functionName in @(
+            'ConvertTo-VantaOneDriveUserSid'
+            'Resolve-VantaOneDriveUserDirectory'
+            'Remove-VantaOneDriveUserEntry'
+            'Remove-VantaOneDriveUserTree'
+            'Get-VantaOneDriveBootUtcTicks'
+            'Register-VantaOneDrivePostBootCleanup'
+        )) {
+        $functionAst = @($script:oneDriveAst.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Name -ceq $functionName
+                }, $true))
+        if ($functionAst.Count -ne 1) {
+            throw "Expected one $functionName definition in the OneDrive cleanup script."
+        }
+        . ([scriptblock]::Create($functionAst[0].Extent.Text))
+    }
+
+    $tokens = $null
+    $errors = $null
+    $script:edgeAst = [Management.Automation.Language.Parser]::ParseFile(
+        $script:edgeUserCleanup,
+        [ref]$tokens,
+        [ref]$errors
+    )
+    if (@($errors).Count -ne 0) {
+        throw "The Edge exact-user cleanup script has parse errors: $($errors -join '; ')"
+    }
+    foreach ($functionName in @(
+            'Get-VantaEdgeExecutablePaths'
+            'Remove-VantaOrphanedEdgeAutoLaunch'
+            'Assert-VantaUserPathBoundary'
+        )) {
+        $functionAst = @($script:edgeAst.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Name -ceq $functionName
+                }, $true))
+        if ($functionAst.Count -ne 1) {
+            throw "Expected one $functionName definition in the Edge cleanup script."
+        }
+        . ([scriptblock]::Create($functionAst[0].Extent.Text))
+    }
+
+    # Execution doubles for the components phase. Functions shadow the real commands so
+    # the phase script runs end to end without touching the machine.
+    function Reset-PhaseRecording {
+        $script:PhaseOptions = @()
+        $script:PhaseContext = [pscustomobject]@{
+            RemoveOneDrive = $true
+            InteractiveUserSid = 'S-1-5-21-1000-2000-3000-1001'
+        }
+        $script:AsUserExitCode = 0
+        $script:AsUserCalls = [Collections.Generic.List[pscustomobject]]::new()
+        $script:HiddenProcessCalls = [Collections.Generic.List[pscustomobject]]::new()
+        $script:RegisteredTasks = [Collections.Generic.List[pscustomobject]]::new()
+        $script:LogCalls = [Collections.Generic.List[pscustomobject]]::new()
+        $script:CbsInstallCalls = [Collections.Generic.List[object]]::new()
+        $script:RegistryWrites = [Collections.Generic.List[pscustomobject]]::new()
+        $script:OneDriveRemovalError = $null
+        $script:CbsUninstallFailed = @()
+        $script:CbsUninstallCalls = 0
+        # A PC Vanta has never touched: Defender present and no Vanta package.
+        $script:PackageStates = @{}
+        $script:DefenderPresent = $true
+        $script:CoreServiceCalls = [Collections.Generic.List[string]]::new()
+        # The phase's steps in the order they ran, across the doubles.
+        $script:Events = [Collections.Generic.List[string]]::new()
+    }
+
+    function Assert-VantaPrivilege {
+        param([switch]$TrustedInstaller)
+    }
+    function Import-Module {
+        param($Name, [switch]$Force, $ErrorAction)
+    }
+    function Test-VantaOption {
+        param($Name)
+        return $script:PhaseOptions -contains $Name
+    }
+    function Get-VantaContext {
+        return $script:PhaseContext
+    }
+    function ConvertTo-VantaWindowsArgumentString {
+        param($ArgumentList)
+        return (@($ArgumentList) -join ' ')
+    }
+    function Invoke-VantaHiddenProcess {
+        param($FilePath, $ArgumentList, [switch]$Wait)
+        $script:HiddenProcessCalls.Add([pscustomobject]@{
+                FilePath     = $FilePath
+                ArgumentList = @($ArgumentList)
+            })
+        $script:Events.Add('EdgeRemoval')
+    }
+    function Invoke-VantaAsUser {
+        param($FilePath, $Arguments)
+        $script:AsUserCalls.Add([pscustomobject]@{
+                FilePath  = $FilePath
+                Arguments = $Arguments
+            })
+        return $script:AsUserExitCode
+    }
+    # Stands in for the Rebase record reader the phase loads, so a test can mock it.
+    function Get-VantaWindowsTransitionRebase { }
+    # Stand in for the readers Set-VantaDefenderChoice.ps1 brings, which the phase loads;
+    # each test's mocks answer from $script:PackageStates and $script:DefenderPresent.
+    function Get-VantaServicingPackageState { param($Name) }
+    function Test-VantaDefenderServicePresent { }
+    function Set-VantaDefenderCoreService {
+        param($State)
+        $script:CoreServiceCalls.Add([string]$State)
+        $script:Events.Add("CoreService:$State")
+    }
+    function Test-VantaDefenderCoreServiceRemoved {
+        $script:Events.Add('CoreServiceRead')
+        return $true
+    }
+    function Remove-VantaOneDrive {
+        $script:Events.Add('OneDrive')
+        if ($null -ne $script:OneDriveRemovalError) {
+            throw $script:OneDriveRemovalError
+        }
+    }
+    function Write-VantaLog {
+        param($Message, $Level = 'Info', $ErrorRecord)
+        $script:LogCalls.Add([pscustomobject]@{
+                Level   = $Level
+                Message = $Message
+            })
+    }
+    function Stop-VantaService {
+        param($Name)
+    }
+    function Set-VantaServiceStartup {
+        param($Name, $StartupType, [switch]$AllowMissing)
+    }
+    function Remove-VantaScheduledTask {
+        param($Path, [switch]$IgnoreMissing)
+    }
+    function Install-VantaCbsPackage {
+        param($Packages, [switch]$NonInteractive)
+        $script:CbsInstallCalls.Add(@($Packages))
+        $script:Events.Add("Install:$(@($Packages) -join '+')")
+    }
+    function Uninstall-VantaCbsPackage {
+        param($Packages)
+        $script:CbsUninstallCalls++
+        $script:Events.Add("Uninstall:$(@($Packages) -join '+')")
+        return [pscustomobject]@{
+            RemovedPackages   = @()
+            FailedPackages    = @($script:CbsUninstallFailed)
+            UnmatchedPatterns = @()
+        }
+    }
+    function New-ScheduledTaskSettingsSet {
+        return 'settings'
+    }
+    function New-ScheduledTaskTrigger {
+        return 'trigger'
+    }
+    function New-ScheduledTaskPrincipal {
+        param($UserId, $LogonType, $RunLevel)
+        return [pscustomobject]@{ UserId = $UserId; RunLevel = $RunLevel }
+    }
+    function New-ScheduledTaskAction {
+        param($Execute, $Argument)
+        return [pscustomobject]@{ Execute = $Execute; Argument = $Argument }
+    }
+    function Register-ScheduledTask {
+        param($TaskName, $Settings, $Trigger, $Principal, $Force, $Action)
+        $script:RegisteredTasks.Add([pscustomobject]@{
+                TaskName  = $TaskName
+                Principal = $Principal
+                Action    = $Action
+            })
+        return $null
+    }
+    # Registry doubles: the phase writes only HKLM keys, which must never be touched.
+    function Test-Path {
+        param($LiteralPath, $Path, $PathType)
+        return $true
+    }
+    function New-Item {
+        param($Path, $ItemType, [switch]$Force)
+        $script:RegistryWrites.Add([pscustomobject]@{
+                Operation = 'NewItem'
+                Path      = $Path
+            })
+        return $null
+    }
+    function Set-ItemProperty {
+        param($LiteralPath, $Path, $Name, $Value, $Type, [switch]$Force)
+        $script:RegistryWrites.Add([pscustomobject]@{
+                Operation = 'SetValue'
+                Path      = if ($LiteralPath) { $LiteralPath } else { $Path }
+                Name      = $Name
+                Value     = $Value
+            })
+        $script:Events.Add("SetValue:$Name")
+    }
+    function Remove-ItemProperty {
+        param($LiteralPath, $Path, $Name, [switch]$Force, $ErrorAction)
+        $script:RegistryWrites.Add([pscustomobject]@{
+                Operation = 'RemoveValue'
+                Path      = if ($LiteralPath) { $LiteralPath } else { $Path }
+                Name      = $Name
+            })
+        $script:Events.Add("RemoveValue:$Name")
+    }
+
+    function Invoke-ComponentsPhaseUnderTest {
+        # Dot-source so the recording doubles observe this test file's script scope.
+        . $script:componentsPhase
+    }
+}
+
+AfterAll {
+    foreach ($shadow in @(
+            'Assert-VantaPrivilege', 'Import-Module', 'Test-VantaOption', 'Get-VantaContext'
+            'ConvertTo-VantaWindowsArgumentString', 'Invoke-VantaHiddenProcess'
+            'Invoke-VantaAsUser', 'Remove-VantaOneDrive', 'Write-VantaLog', 'Get-VantaWindowsTransitionRebase'
+            'Get-VantaServicingPackageState', 'Test-VantaDefenderServicePresent', 'Set-VantaDefenderCoreService'
+            'Test-VantaDefenderCoreServiceRemoved', 'Stop-VantaService', 'Set-VantaServiceStartup', 'Remove-VantaScheduledTask'
+            'Install-VantaCbsPackage', 'Uninstall-VantaCbsPackage'
+            'New-ScheduledTaskSettingsSet', 'New-ScheduledTaskTrigger'
+            'New-ScheduledTaskPrincipal', 'New-ScheduledTaskAction', 'Register-ScheduledTask'
+            'Test-Path', 'New-Item', 'Set-ItemProperty', 'Remove-ItemProperty'
+            'Get-VantaEdgeExecutablePaths', 'Remove-VantaOrphanedEdgeAutoLaunch'
+            'Assert-VantaUserPathBoundary'
+        )) {
+        Microsoft.PowerShell.Management\Remove-Item -LiteralPath "Function:\$shadow" `
+            -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'Components phase deferred and exact-user cleanup behaviour' {
+    BeforeEach {
+        Reset-PhaseRecording
+        # The phase must never read this PC's own servicing packages or Defender.
+        Mock Get-VantaServicingPackageState { $script:PackageStates[$Name] }
+        Mock Test-VantaDefenderServicePresent { $script:DefenderPresent }
+    }
+
+    It 'fails the install when Defender could not be restored for a keep choice' {
+        $script:PhaseOptions = @('defender-enable')
+        $script:PackageStates['Z-Vanta-NoDefender-Package'] = 'Installed'
+        $script:CbsUninstallFailed = @('Z-Vanta-NoDefender-Package~amd64~~1.0.0.0')
+
+        { Invoke-ComponentsPhaseUnderTest } | Should -Throw "*Microsoft Defender couldn't be restored*"
+        # The telemetry package still goes in first.
+        @($script:CbsInstallCalls | Where-Object { $_ -contains '*Z-[AV]*-NoTelemetry-Package*' }).Count | Should -Be 1
+        # The core service goes back while Defender is still removed.
+        @($script:Events | Where-Object { $_ -like 'CoreService:*' -or $_ -like 'Uninstall:*' }) |
+            Should -Be @('CoreService:Restored', 'Uninstall:*Z-[AV]*-NoDefender-Package*')
+    }
+
+    It 'keeps Defender quietly when there was no removal package to take off' {
+        $script:PhaseOptions = @('defender-enable')
+
+        { Invoke-ComponentsPhaseUnderTest } | Should -Not -Throw
+        @($script:CbsInstallCalls | Where-Object { $_ -contains '*Z-[AV]*-NoTelemetry-Package*' }).Count | Should -Be 1
+        @($script:LogCalls | Where-Object { $_.Level -eq 'Warning' }).Count | Should -Be 0
+        $script:CoreServiceCalls | Should -BeNullOrEmpty
+        $script:CbsUninstallCalls | Should -Be 0
+    }
+
+    It 'sets the core service up for removal on a PC Vanta already removed Defender from, whatever it reads' {
+        $script:PhaseOptions = @('defender-disable')
+        $script:PackageStates['Z-Vanta-NoDefender-Package'] = 'Installed'
+        $script:PackageStates['Z-Vanta-NoTelemetry-Package'] = 'Installed'
+
+        Invoke-ComponentsPhaseUnderTest
+
+        @($script:Events | Where-Object { $_ -like 'Install:*' -or $_ -like 'CoreService*' }) | Should -Be @('CoreService:Removed')
+    }
+
+    It 'removes Defender with both packages, then turns its core service off at the next startup' {
+        $script:PhaseOptions = @('defender-disable')
+
+        Invoke-ComponentsPhaseUnderTest
+
+        @($script:Events | Where-Object { $_ -like 'Install:*' -or $_ -like 'CoreService:*' }) | Should -Be @(
+            'Install:*Z-[AV]*-NoDefender-Package*+*Z-[AV]*-NoTelemetry-Package*'
+            'CoreService:Removed'
+        )
+        $script:CbsUninstallCalls | Should -Be 0
+    }
+
+    It 'puts NoTelemetry back on a Rebase whose rebuilt Windows lost it, with either Defender choice: <Option>' -ForEach @(
+        @{ Option = 'defender-enable'; Installs = @('Install:*Z-[AV]*-NoTelemetry-Package*'); Core = @() }
+        @{ Option = 'defender-disable'; Installs = @('Install:*Z-[AV]*-NoDefender-Package*+*Z-[AV]*-NoTelemetry-Package*'); Core = @('Removed') }
+    ) {
+        $script:PhaseOptions = @($Option)
+        $script:PhaseContext = [pscustomobject]@{ RemoveOneDrive = $true; IsRebase = $true; InteractiveUserSid = 'S-1-5-21-1000-2000-3000-1001' }
+        Mock Get-VantaWindowsTransitionRebase { [pscustomobject]@{ Carry = [pscustomobject]@{ edge = $false; oneDrive = $false } } }
+
+        Invoke-ComponentsPhaseUnderTest
+
+        @($script:Events | Where-Object { $_ -like 'Install:*' }) | Should -Be $Installs
+        @($script:CoreServiceCalls) | Should -Be $Core
+    }
+
+    It 'never installs a servicing package that is already installed' {
+        $script:PhaseOptions = @('defender-disable')
+        $script:PackageStates['Z-Vanta-NoTelemetry-Package'] = 'Installed'
+
+        Invoke-ComponentsPhaseUnderTest
+
+        @($script:Events | Where-Object { $_ -like 'Install:*' }) | Should -Be @('Install:*Z-[AV]*-NoDefender-Package*')
+        @($script:CoreServiceCalls) | Should -Be @('Removed')
+    }
+
+    It 'warns, and still installs NoTelemetry, when Defender is missing and no Vanta package removed it' {
+        $script:PhaseOptions = @('defender-enable')
+        $script:DefenderPresent = $false
+
+        { Invoke-ComponentsPhaseUnderTest } | Should -Not -Throw
+
+        @($script:LogCalls | Where-Object {
+                $_.Level -eq 'Warning' -and
+                $_.Message -ceq "Microsoft Defender isn't on this PC and no Vanta package removed it, so Vanta can't bring it back."
+            }).Count | Should -Be 1
+        @($script:Events | Where-Object { $_ -like 'Install:*' }) | Should -Be @('Install:*Z-[AV]*-NoTelemetry-Package*')
+        $script:CbsUninstallCalls | Should -Be 0
+    }
+
+    It 'keeps the order of Edge, Security Center, Smart App Control, OneDrive, Defender and Teams' {
+        $script:PhaseOptions = @('uninstall-edge', 'defender-disable')
+
+        Invoke-ComponentsPhaseUnderTest
+
+        $order = @('EdgeRemoval', 'RemoveValue:SecurityHealth', 'SetValue:VerifiedAndReputablePolicyState',
+            'OneDrive', 'Install:*Z-[AV]*-NoDefender-Package*+*Z-[AV]*-NoTelemetry-Package*', 'CoreService:Removed',
+            'SetValue:ConfigureChatAutoInstall')
+        @($script:Events | Where-Object { $order -contains $_ }) | Should -Be $order
+    }
+
+    It 'keeps Edge''s elevation service off and deprovisions both Edge families when it removes Edge' {
+        $script:PhaseOptions = @('uninstall-edge')
+        Mock Set-VantaServiceStartup { }
+
+        Invoke-ComponentsPhaseUnderTest
+
+        Should -Invoke Set-VantaServiceStartup -Times 1 -Exactly -ParameterFilter {
+            $Name -ceq 'MicrosoftEdgeElevationService' -and $StartupType -eq 4 -and $AllowMissing
+        }
+        @($script:RegistryWrites | Where-Object { $_.Operation -eq 'NewItem' -and $_.Path -like '*\Deprovisioned\*' } |
+                ForEach-Object { Split-Path -Leaf $_.Path }) | Should -Be @(
+            'Microsoft.MicrosoftEdge.Stable_8wekyb3d8bbwe'
+            'Microsoft.MicrosoftEdge_8wekyb3d8bbwe'
+        )
+    }
+
+    It 'leaves Edge alone when it isn''t chosen' {
+        Mock Set-VantaServiceStartup { }
+
+        Invoke-ComponentsPhaseUnderTest
+
+        @($script:HiddenProcessCalls).Count | Should -Be 0
+        Should -Invoke Set-VantaServiceStartup -Times 0 -Exactly
+        @($script:RegistryWrites | Where-Object { $_.Path -like '*\Deprovisioned\*' }).Count | Should -Be 0
+    }
+
+    It 'dispatches OneDrive profile cleanup through the exact-user launcher' {
+
+        Invoke-ComponentsPhaseUnderTest
+
+        $oneDriveCalls = @($script:AsUserCalls | Where-Object {
+                $_.Arguments -like '*Remove-OneDriveCurrentUserData.ps1*'
+            })
+        $oneDriveCalls.Count | Should -Be 1
+        $oneDriveCalls[0].FilePath | Should -Match 'powershell\.exe$'
+        $oneDriveCalls[0].Arguments | Should -Match `
+        ('-ExpectedUserSid ' + [regex]::Escape($script:PhaseContext.InteractiveUserSid))
+        $oneDriveCalls[0].Arguments | Should -Match '-DeferFileCleanup'
+    }
+
+    It 'warns and continues when the exact-user OneDrive cleanup exits nonzero' {
+        $script:AsUserExitCode = 23
+
+        { Invoke-ComponentsPhaseUnderTest } | Should -Not -Throw
+
+        $warnings = @($script:LogCalls | Where-Object { $_.Level -eq 'Warning' })
+        @($warnings | Where-Object {
+                $_.Message -like '*Exact-user OneDrive leftover cleanup exited with code 23*'
+            }).Count | Should -Be 1
+    }
+
+    It 'warns and reaches the remaining cleanup when Edge leftovers cannot be removed' {
+        $script:PhaseOptions = @('uninstall-edge')
+        $script:AsUserExitCode = 1
+
+        { Invoke-ComponentsPhaseUnderTest } | Should -Not -Throw
+
+        @($script:HiddenProcessCalls).Count | Should -Be 1
+        @($script:AsUserCalls | Where-Object { $_.Arguments -like '*Remove-EdgeCurrentUserData.ps1*' }).Count | Should -Be 1
+        @($script:AsUserCalls | Where-Object { $_.Arguments -like '*Remove-OneDriveCurrentUserData.ps1*' }).Count | Should -Be 1
+        @($script:LogCalls | Where-Object {
+                $_.Level -eq 'Warning' -and
+                $_.Message -like '*Exact-user Edge leftover cleanup exited with code 1; continuing installation*'
+            }).Count | Should -Be 1
+    }
+
+    It 'leaves Edge and OneDrive in a Rebase when an account had them before Windows moved' {
+        $script:PhaseOptions = @('uninstall-edge')
+        $script:PhaseContext = [pscustomobject]@{ RemoveOneDrive = $true; IsRebase = $true; InteractiveUserSid = 'S-1-5-21-1000-2000-3000-1001' }
+        Mock Get-VantaWindowsTransitionRebase { [pscustomobject]@{ Carry = [pscustomobject]@{ edge = $true; oneDrive = $true } } }
+        Mock Remove-VantaOneDrive { }
+
+        Invoke-ComponentsPhaseUnderTest
+
+        @($script:HiddenProcessCalls).Count | Should -Be 0
+        @($script:AsUserCalls).Count | Should -Be 0
+        Should -Invoke Remove-VantaOneDrive -Times 0
+        @($script:RegistryWrites | Where-Object { $_.Path -like '*Deprovisioned\Microsoft.MicrosoftEdge*' }).Count | Should -Be 0
+        @($script:LogCalls | Where-Object { $_.Message -like 'Left Edge*' }).Count | Should -Be 1
+        @($script:LogCalls | Where-Object { $_.Message -like 'Left OneDrive*' }).Count | Should -Be 1
+    }
+
+    It 'removes in a Rebase only the Edge and OneDrive Windows put back' {
+        $script:PhaseOptions = @('uninstall-edge')
+        $script:PhaseContext = [pscustomobject]@{ RemoveOneDrive = $true; IsRebase = $true; InteractiveUserSid = 'S-1-5-21-1000-2000-3000-1001' }
+        Mock Get-VantaWindowsTransitionRebase { [pscustomobject]@{ Carry = [pscustomobject]@{ edge = $false; oneDrive = $false } } }
+        Mock Remove-VantaOneDrive { }
+
+        Invoke-ComponentsPhaseUnderTest
+
+        @($script:HiddenProcessCalls).Count | Should -Be 1
+        Should -Invoke Remove-VantaOneDrive -Times 1 -Exactly
+    }
+
+    It 'requires the install-state user SID for OneDrive cleanup' {
+        $script:PhaseContext.InteractiveUserSid = ''
+
+        { Invoke-ComponentsPhaseUnderTest } | Should -Throw '*OneDrive current-user cleanup requires*'
+    }
+
+    It 'requires the install-state user SID for Edge cleanup' {
+        $script:PhaseOptions = @('uninstall-edge')
+        $script:PhaseContext.InteractiveUserSid = ''
+
+        { Invoke-ComponentsPhaseUnderTest } | Should -Throw '*Edge current-user cleanup requires*'
+        @($script:AsUserCalls).Count | Should -Be 0
+    }
+
+
+    It 'rethrows unconfirmed OneDrive process containment instead of continuing' {
+        $containmentError = New-Object Exception 'vendor uninstall failed'
+        $containmentError.Data['VantaProcessMayStillBeRunning'] = $true
+        $script:OneDriveRemovalError = $containmentError
+
+        { Invoke-ComponentsPhaseUnderTest } | Should -Throw '*vendor uninstall failed*'
+    }
+
+    It 'logs a warning and completes when confirmed-contained OneDrive removal fails' {
+        $script:OneDriveRemovalError = New-Object Exception 'ordinary removal failure'
+
+        { Invoke-ComponentsPhaseUnderTest } | Should -Not -Throw
+
+        @($script:LogCalls | Where-Object {
+                $_.Level -eq 'Warning' -and
+                $_.Message -like '*Removing OneDrive failed: ordinary removal failure*'
+            }).Count | Should -Be 1
+    }
+
+    It 'passes Remove-Edge.ps1 only the switches it declares and leaves its services to it' {
+        $script:PhaseOptions = @('uninstall-edge')
+        Mock Stop-VantaService { }
+
+        Invoke-ComponentsPhaseUnderTest
+
+        @($script:HiddenProcessCalls).Count | Should -Be 1
+        $arguments = @($script:HiddenProcessCalls[0].ArgumentList)
+        $fileIndex = [array]::IndexOf($arguments, '-File')
+        $edgeScript = $arguments[$fileIndex + 1]
+        $edgeScript | Should -BeLike '*\Operations\Remove-Edge.ps1'
+        # A switch the script doesn't declare fails parameter binding, and with it every install.
+        $declared = @([Management.Automation.Language.Parser]::ParseFile($edgeScript, [ref]$null, [ref]$null).
+            ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
+        foreach ($switch in @($arguments[($fileIndex + 2)..($arguments.Count - 1)])) {
+            $declared | Should -Contain $switch.TrimStart('-') -Because "Remove-Edge.ps1 must bind '$switch'"
+        }
+        # Remove-Edge.ps1 stops Edge's services; stopping a missing one again only logs a false warning.
+        Should -Invoke Stop-VantaService -Times 0 -Exactly
+    }
+}
+
+Describe 'OneDrive exact-user cleanup boundary' {
+    BeforeEach {
+        # The extracted functions run under the strict mode their script sets.
+        Set-StrictMode -Version 3.0
+    }
+
+    It 'defers file removal until after the reboot and preserves unsynced data' {
+        $expectedSid = 'S-1-5-21-1000-2000-3000-1001'
+        Mock Get-VantaOneDriveBootUtcTicks { 638925000000000000L }
+        Mock Register-VantaOneDrivePostBootCleanup {}
+        $oneDriveCache = Join-Path $TestDrive 'OneDriveCache'
+        $oneDriveFolder = Join-Path $TestDrive 'OneDriveSync'
+        $oneDriveShortcut = Join-Path $TestDrive 'OneDrive.lnk'
+        [void][IO.Directory]::CreateDirectory($oneDriveCache)
+        [void][IO.Directory]::CreateDirectory($oneDriveFolder)
+        $shellDll = Join-Path $oneDriveCache 'FileSyncShell64.dll'
+        $userFile = Join-Path $oneDriveFolder 'unsynced.txt'
+        [IO.File]::WriteAllText($shellDll, 'shell fixture')
+        [IO.File]::WriteAllText($userFile, 'keep this user data')
+        [IO.File]::WriteAllText($oneDriveShortcut, 'shortcut fixture')
+        $deferGate = $script:oneDriveAst.Find({
+                param($node)
+                $node -is [Management.Automation.Language.IfStatementAst] -and
+                $node.Clauses[0].Item1.Extent.Text -eq '$DeferFileCleanup'
+            }, $true)
+        $deferGate | Should -Not -BeNullOrEmpty
+        # Execute only the file stage with TestDrive paths, never profile/registry setup.
+        $fileStage = [scriptblock]::Create(
+            'param([bool]$DeferFileCleanup, [string]$expectedSid)' + "`n" +
+            $script:oneDriveAst.Extent.Text.Substring($deferGate.Extent.StartOffset))
+        { & $fileStage $true $expectedSid } | Should -Not -Throw
+        [IO.File]::Exists($shellDll) | Should -BeTrue
+        [IO.File]::Exists($oneDriveShortcut) | Should -BeTrue
+
+        & $fileStage $false $expectedSid 3>$null
+        Should -Invoke Register-VantaOneDrivePostBootCleanup -Times 1 -Exactly -ParameterFilter {
+            $UserSid -eq 'S-1-5-21-1000-2000-3000-1001' -and
+                $BootUtcTicks -eq 638925000000000000L
+        }
+        [IO.Directory]::Exists($oneDriveCache) | Should -BeFalse
+        [IO.File]::Exists($oneDriveShortcut) | Should -BeFalse
+        [IO.File]::ReadAllText($userFile) | Should -BeExactly 'keep this user data'
+    }
+
+    It 'waits through shell restarts and consumes only its own startup entry after reboot' {
+        $bootGate = $script:oneDriveAst.Find({
+                param($node)
+                $node -is [Management.Automation.Language.IfStatementAst] -and
+                $node.Clauses[0].Item1.Extent.Text -eq '$AfterBootUtcTicks -ne 0'
+            }, $true)
+        $bootGate | Should -Not -BeNullOrEmpty
+        $gate = [scriptblock]::Create('param([long]$AfterBootUtcTicks)' + "`n" +
+            $bootGate.Extent.Text + "`n'file cleanup reached'")
+        Mock Get-VantaOneDriveBootUtcTicks { 638925000000000000L }
+        Mock Remove-ItemProperty {}
+
+        & $gate 638925000000000000L | Should -BeExactly `
+            'OneDrive file cleanup is waiting for the installation reboot.'
+        Should -Invoke Remove-ItemProperty -Times 0 -Exactly
+        & $gate 638924000000000000L | Should -BeExactly 'file cleanup reached'
+        Should -Invoke Remove-ItemProperty -Times 1 -Exactly -ParameterFilter {
+            $LiteralPath -eq 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -and
+                $Name -eq 'VantaOneDriveCleanup'
+        }
+    }
+
+    It 'requires a valid Windows boot time before deferring cleanup' {
+        Mock Get-CimInstance { [pscustomobject]@{ LastBootUpTime = $null } }
+        { Get-VantaOneDriveBootUtcTicks } | Should -Throw '*valid last boot time*'
+    }
+
+    It 'refuses to run for a token that does not match the install-state SID' {
+        # A structurally valid account SID that cannot match the current test token.
+        $foreignSid = 'S-1-5-21-1-2-3-500'
+        $savedModulePath = $env:PSModulePath
+        try {
+            { & $script:oneDriveUserCleanup -ExpectedUserSid $foreignSid } |
+                Should -Throw '*does not match install-state SID*'
+        }
+        finally {
+            $env:PSModulePath = $savedModulePath
+        }
+    }
+
+    It 'canonicalises account SIDs and rejects invalid or non-account SIDs' {
+        ConvertTo-VantaOneDriveUserSid -Sid 'S-1-5-21-1000-2000-3000-1001' |
+            Should -BeExactly 'S-1-5-21-1000-2000-3000-1001'
+        { ConvertTo-VantaOneDriveUserSid -Sid 'not-a-sid' } |
+            Should -Throw '*is invalid*'
+        { ConvertTo-VantaOneDriveUserSid -Sid 'S-1-5-18' } |
+            Should -Throw '*not a local or domain account SID*'
+    }
+
+    It 'resolves cleanup paths only inside an existing normal root' {
+        $root = Join-Path $TestDrive 'ProfileRoot'
+        [void][IO.Directory]::CreateDirectory($root)
+
+        Resolve-VantaOneDriveUserDirectory -Root $root -ChildPath 'Microsoft\OneDrive' |
+            Should -BeExactly ([IO.Path]::Combine([IO.Path]::GetFullPath($root), 'Microsoft\OneDrive'))
+        { Resolve-VantaOneDriveUserDirectory -Root ' ' -ChildPath 'x' } |
+            Should -Throw '*is unavailable*'
+        { Resolve-VantaOneDriveUserDirectory -Root (Join-Path $TestDrive 'Missing') -ChildPath 'x' } |
+            Should -Throw '*is unavailable*'
+        { Resolve-VantaOneDriveUserDirectory -Root $root -ChildPath '..\Escape' } |
+            Should -Throw '*escaped exact-user root*'
+    }
+
+    It 'rejects a reparse-point root and reparse-point path components' {
+        $outside = Join-Path $TestDrive 'OutsideRoot'
+        $linkRoot = Join-Path $TestDrive 'LinkRoot'
+        [void][IO.Directory]::CreateDirectory($outside)
+        try {
+            Microsoft.PowerShell.Management\New-Item -Path $linkRoot -ItemType Junction `
+                -Target $outside -ErrorAction Stop | Out-Null
+        }
+        catch {
+            Set-ItResult -Skipped -Because "Directory junctions are unavailable: $($_.Exception.Message)"
+            return
+        }
+
+        { Resolve-VantaOneDriveUserDirectory -Root $linkRoot -ChildPath 'x' } |
+            Should -Throw '*is a reparse point*'
+
+        $normalRoot = Join-Path $TestDrive 'NormalRoot'
+        $linkChild = Join-Path $normalRoot 'Linked'
+        [void][IO.Directory]::CreateDirectory($normalRoot)
+        Microsoft.PowerShell.Management\New-Item -Path $linkChild -ItemType Junction `
+            -Target $outside | Out-Null
+        { Resolve-VantaOneDriveUserDirectory -Root $normalRoot -ChildPath 'Linked\Deeper' } |
+            Should -Throw '*is a reparse point*'
+    }
+
+    Context 'a OneDrive folder under Files On-Demand' {
+        BeforeEach {
+            $script:profileRoot = Join-Path $TestDrive 'Profile'
+            [void][IO.Directory]::CreateDirectory((Join-Path $script:profileRoot 'OneDrive'))
+        }
+
+        It 'resolves through a OneDrive folder that Files On-Demand marks as a reparse point' {
+            # Windows PowerShell sees the cloud files reparse point on a signed-in user's OneDrive folder.
+            Mock Get-Item -ParameterFilter { $LiteralPath -like '*\OneDrive' } {
+                [pscustomobject]@{ Attributes = [IO.FileAttributes]'Directory, ReparsePoint'; LinkType = $null }
+            }
+            Resolve-VantaOneDriveUserDirectory -Root $script:profileRoot -ChildPath 'OneDrive\Desktop' |
+                Should -BeExactly ([IO.Path]::Combine([IO.Path]::GetFullPath($script:profileRoot), 'OneDrive\Desktop'))
+        }
+
+        It 'still refuses a <LinkType> on the way' -TestCases @(
+            @{ LinkType = 'SymbolicLink' }
+            @{ LinkType = 'Junction' }
+        ) {
+            Mock Get-Item -ParameterFilter { $LiteralPath -like '*\OneDrive' } {
+                [pscustomobject]@{ Attributes = [IO.FileAttributes]'Directory, ReparsePoint'; LinkType = $LinkType }
+            }
+            { Resolve-VantaOneDriveUserDirectory -Root $script:profileRoot -ChildPath 'OneDrive\Desktop' } |
+                Should -Throw '*OneDrive*links elsewhere*'
+        }
+    }
+
+    It 'deletes a junction inside the tree without traversing into its target' {
+        $tree = Join-Path $TestDrive 'CacheTree'
+        $outside = Join-Path $TestDrive 'JunctionTarget'
+        [void][IO.Directory]::CreateDirectory((Join-Path $tree 'Nested'))
+        [void][IO.Directory]::CreateDirectory($outside)
+        $sentinel = Join-Path $outside 'sentinel.txt'
+        [IO.File]::WriteAllText($sentinel, 'keep')
+        $readOnly = Join-Path $tree 'Nested\readonly.dat'
+        [IO.File]::WriteAllText($readOnly, 'x')
+        [IO.File]::SetAttributes($readOnly, [IO.FileAttributes]::ReadOnly)
+        try {
+            Microsoft.PowerShell.Management\New-Item -Path (Join-Path $tree 'Linked') `
+                -ItemType Junction -Target $outside -ErrorAction Stop | Out-Null
+        }
+        catch {
+            Set-ItResult -Skipped -Because "Directory junctions are unavailable: $($_.Exception.Message)"
+            return
+        }
+
+        Remove-VantaOneDriveUserTree -Path $tree
+
+        [IO.Directory]::Exists($tree) | Should -BeFalse
+        [IO.File]::Exists($sentinel) | Should -BeTrue
+    }
+
+    It 'removes independent siblings while reporting a locked cache file' {
+        $tree = Join-Path $TestDrive 'LockedCache'
+        [void][IO.Directory]::CreateDirectory((Join-Path $tree 'Version'))
+        $lockedPath = Join-Path $tree 'Version\FileSyncShell64.dll'
+        $siblingPath = Join-Path $tree 'Version\other.dat'
+        $laterPath = Join-Path $tree 'unrelated.dat'
+        foreach ($file in @($lockedPath, $siblingPath, $laterPath)) {
+            [IO.File]::WriteAllText($file, 'test')
+        }
+        $stream = [IO.File]::Open($lockedPath, 'Open', 'Read', 'None')
+        try {
+            $failures = New-Object 'System.Collections.Generic.List[string]'
+            Remove-VantaOneDriveUserTree -Path $tree -Failures $failures
+            $failures.Count | Should -Be 1
+            $failures[0] | Should -BeLike '*FileSyncShell64.dll*'
+            [IO.File]::Exists($lockedPath) | Should -BeTrue
+            [IO.File]::Exists($siblingPath) | Should -BeFalse
+            [IO.File]::Exists($laterPath) | Should -BeFalse
+            { Remove-VantaOneDriveUserTree -Path $tree } | Should -Throw '*retained 1 item*'
+        }
+        finally { $stream.Dispose() }
+        Remove-VantaOneDriveUserTree -Path $tree
+        [IO.Directory]::Exists($tree) | Should -BeFalse
+        # A tree that is already gone counts as removed.
+        { Remove-VantaOneDriveUserTree -Path $tree } | Should -Not -Throw
+    }
+}
+
+Describe 'Edge exact-user startup cleanup boundary' {
+    It 'records a cleanup failure before closing its transcript and still returns the error' {
+        $cleanupTry = $script:edgeAst.Find({
+                param($node)
+                $node -is [Management.Automation.Language.TryStatementAst] -and
+                    $node.Body.Extent.Text.Contains('Invoke-VantaEdgeUserCleanup')
+            }, $true)
+        $cleanupTry | Should -Not -BeNullOrEmpty
+        function Invoke-VantaEdgeUserCleanup { throw 'Cleanup fixture rejected a linked path.' }
+        $transcriptPath = Join-Path $TestDrive 'edge-cleanup-test.log'
+        Start-Transcript -Path $transcriptPath | Out-Null
+        Set-Variable -Name transcriptStarted -Value $true
+        try {
+            { & ([scriptblock]::Create($cleanupTry.Extent.Text)) } |
+                Should -Throw '*Cleanup fixture rejected a linked path*'
+            (Get-Content -LiteralPath $transcriptPath -Raw) | Should -Match 'ERROR: Cleanup fixture rejected a linked path'
+        }
+        finally {
+            try { Stop-Transcript -ErrorAction Stop | Out-Null } catch { $null = $_ }
+            Microsoft.PowerShell.Management\Remove-Item -LiteralPath 'Function:\Invoke-VantaEdgeUserCleanup' -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'refuses a foreign user token before starting cleanup or logging' {
+        $savedModulePath = $env:PSModulePath
+        try {
+            { & $script:edgeUserCleanup -ExpectedUserSid 'S-1-5-21-1-2-3-500' } |
+                Should -Throw '*does not match install-state SID*'
+        }
+        finally { $env:PSModulePath = $savedModulePath }
+    }
+
+    It 'rejects linked cleanup roots without touching the destination' {
+        $root = Join-Path $TestDrive 'EdgeLinkedRoot'
+        $outside = Join-Path $TestDrive 'EdgeOutsideRoot'
+        [void][IO.Directory]::CreateDirectory($outside)
+        $marker = Join-Path $outside 'keep.txt'
+        [IO.File]::WriteAllText($marker, 'preserve shared data')
+        $null = Microsoft.PowerShell.Management\New-Item -ItemType Junction -Path $root -Target $outside
+        try {
+            { Assert-VantaUserPathBoundary -Root $root -Path $root -RequireTarget } |
+                Should -Throw '*reparse point*'
+            [IO.File]::ReadAllText($marker) | Should -BeExactly 'preserve shared data'
+        }
+        finally { [IO.Directory]::Delete($root, $false) }
+    }
+
+    BeforeEach {
+        # The extracted functions run under the strict mode their script sets.
+        Set-StrictMode -Version 3.0
+        $script:edgeRegistryRoot = 'Software\VantaRewriteTest\EdgeCleanup'
+        $script:edgeRunSubKey = "$script:edgeRegistryRoot\Run"
+        $script:edgeApprovedSubKey = "$script:edgeRegistryRoot\StartupApproved"
+        $script:missingEdgePath = Join-Path $TestDrive `
+            'Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+        $runKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(
+            $script:edgeRunSubKey
+        )
+        $approvedKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(
+            $script:edgeApprovedSubKey
+        )
+        $script:edgeRunKey = $runKey
+        $script:edgeApprovedKey = $approvedKey
+    }
+
+    AfterEach {
+        if ($null -ne $script:edgeRunKey) {
+            $script:edgeRunKey.Dispose()
+        }
+        if ($null -ne $script:edgeApprovedKey) {
+            $script:edgeApprovedKey.Dispose()
+        }
+        [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree(
+            $script:edgeRegistryRoot,
+            $false
+        )
+    }
+
+    It 'removes only a canonical orphaned Edge auto-launch registration' {
+        $edgeValueName = 'MicrosoftEdgeAutoLaunch_3C32DD8DCCCF754B3FFB51F344CC4011'
+        $edgeCommand = '"{0}" --no-startup-window --win-session-start' -f `
+            $script:missingEdgePath
+        $script:edgeRunKey.SetValue(
+            $edgeValueName,
+            $edgeCommand,
+            [Microsoft.Win32.RegistryValueKind]::String
+        )
+        $script:edgeApprovedKey.SetValue(
+            $edgeValueName,
+            [byte[]](2, 0, 0, 0),
+            [Microsoft.Win32.RegistryValueKind]::Binary
+        )
+
+        $removed = @(Remove-VantaOrphanedEdgeAutoLaunch `
+                -RunSubKey $script:edgeRunSubKey `
+                -StartupApprovedSubKeys @($script:edgeApprovedSubKey) `
+                -KnownEdgeExecutablePaths @($script:missingEdgePath))
+
+        $removed | Should -Be @($edgeValueName)
+        $script:edgeRunKey.GetValueNames() | Should -Not -Contain $edgeValueName
+        $script:edgeApprovedKey.GetValueNames() | Should -Not -Contain $edgeValueName
+    }
+
+    It 'preserves unrelated, malformed, and still-installed startup entries' {
+        $orphanedEdgeName = 'MicrosoftEdgeAutoLaunch_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+        $installedEdgeName = 'MicrosoftEdgeAutoLaunch_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+        $malformedEdgeName = 'MicrosoftEdgeAutoLaunch_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
+        $unrelatedName = 'MyStartupItem'
+        $installedEdgePath = Join-Path $TestDrive `
+            'Installed\Microsoft\Edge\Application\msedge.exe'
+        $null = [IO.Directory]::CreateDirectory(
+            [IO.Path]::GetDirectoryName($installedEdgePath)
+        )
+        [IO.File]::WriteAllText($installedEdgePath, 'not-an-executable')
+
+        $script:edgeRunKey.SetValue(
+            $orphanedEdgeName,
+            '"C:\Other\msedge.exe" --no-startup-window --win-session-start'
+        )
+        $script:edgeRunKey.SetValue(
+            $installedEdgeName,
+            ('"{0}" --no-startup-window --win-session-start' -f $installedEdgePath)
+        )
+        $script:edgeRunKey.SetValue(
+            $malformedEdgeName,
+            ('"{0}" --win-session-start' -f $script:missingEdgePath)
+        )
+        $script:edgeRunKey.SetValue($unrelatedName, '"C:\Tools\tool.exe"')
+
+        $removed = @(Remove-VantaOrphanedEdgeAutoLaunch `
+                -RunSubKey $script:edgeRunSubKey `
+                -StartupApprovedSubKeys @($script:edgeApprovedSubKey) `
+                -KnownEdgeExecutablePaths @(
+                    $script:missingEdgePath
+                    $installedEdgePath
+                ))
+
+        $removed | Should -BeNullOrEmpty
+        $script:edgeRunKey.GetValueNames() | Should -Contain $orphanedEdgeName
+        $script:edgeRunKey.GetValueNames() | Should -Contain $installedEdgeName
+        $script:edgeRunKey.GetValueNames() | Should -Contain $malformedEdgeName
+        $script:edgeRunKey.GetValueNames() | Should -Contain $unrelatedName
+    }
+
+    It 'removes an approved-only Edge auto-launch orphan' {
+        $edgeValueName = 'MicrosoftEdgeAutoLaunch_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD'
+        $script:edgeApprovedKey.SetValue(
+            $edgeValueName,
+            [byte[]](2, 0, 0, 0),
+            [Microsoft.Win32.RegistryValueKind]::Binary
+        )
+
+        $removed = @(Remove-VantaOrphanedEdgeAutoLaunch `
+                -RunSubKey $script:edgeRunSubKey `
+                -StartupApprovedSubKeys @($script:edgeApprovedSubKey) `
+                -KnownEdgeExecutablePaths @($script:missingEdgePath))
+
+        $removed | Should -Be @($edgeValueName)
+        $script:edgeApprovedKey.GetValueNames() | Should -Not -Contain $edgeValueName
+    }
+
+    It 'preserves an approved record while its startup command still exists' {
+        $edgeValueName = 'MicrosoftEdgeAutoLaunch_EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE'
+        $script:edgeRunKey.SetValue(
+            $edgeValueName,
+            '"C:\Custom\msedge.exe" --no-startup-window --win-session-start'
+        )
+        $script:edgeApprovedKey.SetValue(
+            $edgeValueName,
+            [byte[]](2, 0, 0, 0),
+            [Microsoft.Win32.RegistryValueKind]::Binary
+        )
+
+        $removed = @(Remove-VantaOrphanedEdgeAutoLaunch `
+                -RunSubKey $script:edgeRunSubKey `
+                -StartupApprovedSubKeys @($script:edgeApprovedSubKey) `
+                -KnownEdgeExecutablePaths @($script:missingEdgePath))
+
+        $removed | Should -BeNullOrEmpty
+        $script:edgeApprovedKey.GetValueNames() | Should -Contain $edgeValueName
+    }
+}

@@ -1,0 +1,50 @@
+# Local assistant state
+.claude/
+.codex/
+.agents/
+
+# MacOS
+.DS_Store
+
+# Built Atlas packages and their temporary files
+*.atlaspkg
+*.atlaspkg.tmp
+*.atlaspkg.*.building.tmp*
+
+# Installation media and disposable virtual machines
+*.iso
+*.vhd
+*.vhdx
+*.avhd
+*.avhdx
+*.vmdk
+*.qcow2
+
+# Local credentials and signing keys (never package inputs)
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+
+# Diagnostics and temporary review captures; source images remain visible
+*.log
+/screenshots/
+/app/screenshots/
+/tmp/
+/app/tmp/
+
+# Test output
+tests/results/
+testResults.xml
+
+# Local tool output
+artifacts/
+lab-output/
+
+# Rust build output of the desktop app
+app/target/
+
+# Downloads and the pinned Go toolchain of tools/release/Get-ThirdPartySources.ps1
+tools/release/cache/

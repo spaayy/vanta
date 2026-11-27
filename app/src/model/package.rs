@@ -1,0 +1,647 @@
+//! The package to install: the release check, and an Atlas package
+//! downloaded, opened from a file or unpacked from a tester build.
+
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+
+use futures::StreamExt;
+use futures::channel::mpsc::UnboundedSender;
+use gpui::{Context, PathPromptOptions};
+
+use super::{AppModel, Generation, Step};
+use crate::services::iso;
+use crate::services::manager_version::ManagerVersion;
+use crate::services::package::{self, ChoiceKind, Manifest};
+use crate::services::releases::{self, Release};
+use crate::t;
+
+#[derive(Clone, Debug)]
+pub enum ReleaseCheck {
+    NotChecked,
+    Checking,
+    Ready { release: Release },
+    Failed,
+}
+
+impl ReleaseCheck {
+    pub fn release(&self) -> Option<&Release> {
+        match self {
+            ReleaseCheck::Ready { release } => Some(release),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Acquisition {
+    Idle,
+    Downloading { received: u64, total: u64 },
+    Extracting { done: usize, total: usize },
+    Failed(AcquireProblem),
+}
+
+/// Why the package could not be made ready. Worded when rendered.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AcquireProblem {
+    /// The release has no `.vantapkg` file.
+    NoPackageAsset { version: String },
+    /// The package is older than the first one this app can install.
+    Unsupported { version: String },
+    /// The file isn't an Atlas package: another kind of file, or an AME
+    /// Wizard package from an Atlas release before 0.6.
+    NotAPackage,
+    /// The package is recent enough to include `Install-Vanta.ps1` but does not.
+    Incomplete { version: String },
+    /// The package needs a newer Atlas Manager: the version it asks for,
+    /// when it names one (see [`package::ManagerOutdated`]).
+    ManagerOutdated { required: Option<String> },
+    /// The download stopped receiving data.
+    Stalled,
+    /// Anything else, with the raw error chain as a diagnostic.
+    Other { error: String },
+}
+
+impl Acquisition {
+    pub fn is_busy(&self) -> bool {
+        matches!(self, Acquisition::Downloading { .. } | Acquisition::Extracting { .. })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Origin {
+    Release(String),
+    LocalFile(PathBuf),
+    /// Unpacked earlier and picked up again after a relaunch.
+    Unpacked,
+    /// The Atlas package built into a tester build.
+    Bundled,
+}
+
+/// A prepared package: an immutable directory whose name carries the
+/// package's version and content digest (see [`package::extract_into`]),
+/// so the manifest read from it describes the files that will run.
+#[derive(Clone, Debug)]
+pub struct PackageSource {
+    pub dir: PathBuf,
+    pub manifest: Manifest,
+    pub origin: Origin,
+    /// The Atlas package file (`.vantapkg`) it was unpacked from: the download, or
+    /// the file opened. ISO creation offers it, so a first-time user who
+    /// never handled the file can still make an ISO from it.
+    pub archive: Option<PathBuf>,
+}
+
+impl PackageSource {
+    /// Where the package came from, in the current language.
+    pub fn describe(&self) -> String {
+        match &self.origin {
+            Origin::Release(version) => t!("package-from-release", version = version),
+            Origin::LocalFile(path) => {
+                t!("package-from-file", version = &self.manifest.version, file = releases::file_name(path))
+            }
+            Origin::Unpacked => t!("package-unpacked", version = &self.manifest.version),
+            Origin::Bundled => t!("package-bundled", version = &self.manifest.version),
+        }
+    }
+}
+
+enum Progress {
+    Download(u64, u64),
+    Extract(usize, usize),
+}
+
+/// How long a package download may receive nothing before it is abandoned.
+const DOWNLOAD_STALL: Duration = if cfg!(test) { Duration::from_secs(2) } else { Duration::from_secs(60) };
+/// The longest a download goes without reporting progress while data
+/// arrives, so a slow download is not taken for a stalled one.
+const PROGRESS_HEARTBEAT: Duration = Duration::from_secs(1);
+
+/// Whether an unpacked directory holds the Atlas package built into this
+/// tester build. Never true in other builds.
+pub(super) fn bundled_holds(dir: &Path) -> bool {
+    #[cfg(feature = "embedded-package")]
+    {
+        crate::services::embedded::holds(dir)
+    }
+    #[cfg(not(feature = "embedded-package"))]
+    {
+        let _ = dir;
+        false
+    }
+}
+
+/// Where a package unpacked earlier came from: a tester build's own package
+/// still says it came with the build after a relaunch or restart.
+pub(super) fn unpacked_origin(dir: &Path) -> Origin {
+    if bundled_holds(dir) { Origin::Bundled } else { Origin::Unpacked }
+}
+
+impl AppModel {
+    /// Whether `release` could finish the unfinished install, if one is waiting.
+    fn release_finishes_resume(&self, release: &Release) -> bool {
+        self.resume_target().is_none_or(|target| target == release.version())
+    }
+
+    /// A tester build: the bundled Atlas package is the only one on offer.
+    pub fn bundled(&self) -> bool {
+        self.env.embedded_startup
+    }
+
+    /// The manifest that describes the install: the loaded package's, or the
+    /// one built into this app until a package is available.
+    pub fn manifest(&self) -> &Manifest {
+        self.package.as_ref().map(|p| &p.manifest).unwrap_or(&self.builtin_manifest)
+    }
+
+    /// Gives every single choice of [`AppModel::manifest`] that has no answer
+    /// its default, including a choice asked only once another option is
+    /// ticked: [`AppModel::effective_options`] leaves that choice's answer out
+    /// until then, and its page then opens with its default chosen instead of none.
+    pub(super) fn fill_radio_defaults(&mut self) {
+        let manifest = self.package.as_ref().map_or(&self.builtin_manifest, |p| &p.manifest);
+        for choice in manifest.choices.iter().filter(|choice| choice.kind == ChoiceKind::Single) {
+            if !choice.options.iter().any(|o| self.options.contains(&o.id))
+                && let Some(default) = choice.options.iter().find(|o| o.default)
+            {
+                self.options.insert(default.id.clone());
+            }
+        }
+    }
+
+    /// A release newer than what is installed, if the check has run.
+    pub fn update_available(&self) -> Option<&Release> {
+        let release = self.release.release()?;
+        let installed = self.installed_version()?;
+        releases::compare_versions(release.version(), installed).is_gt().then_some(release)
+    }
+
+    /// The update Home offers: none while no install can start from Home,
+    /// while an unfinished install waits for a different version, or when
+    /// the release predates the first one this app can install.
+    pub fn offered_update(&self) -> Option<&Release> {
+        if self.start_block().is_some() {
+            return None;
+        }
+        self.update_available().filter(|release| {
+            self.release_finishes_resume(release) && !package::predates_front_door(release.version())
+        })
+    }
+
+    /// The version of a newer Atlas Manager, when the latest release is
+    /// newer than this one. None until the release check has succeeded, and
+    /// never in a tester build, which doesn't check.
+    pub fn manager_update(&self) -> Option<&str> {
+        let release = self.release.release()?;
+        ManagerVersion::current().older_than(release.version()).then(|| release.version())
+    }
+
+    /// The last package tried needs a newer Atlas Manager than this one.
+    pub fn package_needs_newer_manager(&self) -> bool {
+        matches!(self.acquisition, Acquisition::Failed(AcquireProblem::ManagerOutdated { .. }))
+    }
+
+    /// The latest release is older than the first one this app can install.
+    pub fn latest_predates_app(&self) -> bool {
+        self.release.release().is_some_and(|release| package::predates_front_door(release.version()))
+    }
+
+    /// Avoid replacing a loaded preview package with an older public
+    /// release, or downloading one that can't finish an unfinished install.
+    pub fn can_download_latest(&self) -> bool {
+        self.release.release().is_some_and(|release| {
+            self.release_finishes_resume(release)
+                && self.package.as_ref().is_none_or(|package| {
+                    !releases::compare_versions(release.version(), &package.manifest.version).is_lt()
+                })
+        })
+    }
+
+    /// Whether Get ready offers the latest release: when it can be
+    /// downloaded, or while there is no package and no known release that
+    /// an unfinished install rules out.
+    pub fn offers_download(&self) -> bool {
+        self.can_download_latest()
+            || (self.package.is_none()
+                && self.release.release().is_none_or(|release| self.release_finishes_resume(release)))
+    }
+
+    pub fn check_for_updates(&mut self, cx: &mut Context<Self>) {
+        if self.bundled() {
+            // A tester build installs only its bundled package and never
+            // asks GitHub what is newest.
+            return;
+        }
+        self.refresh_atlas_state();
+        if matches!(self.release, ReleaseCheck::Checking) {
+            return;
+        }
+        self.release = ReleaseCheck::Checking;
+        cx.notify();
+        let fetch = self.env.adapters.fetch_release.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { fetch() }).await;
+            this.update(cx, |this, cx| {
+                this.release = match result {
+                    Ok(release) => ReleaseCheck::Ready { release },
+                    Err(error) => {
+                        log::warn!("release check failed: {error:#}");
+                        ReleaseCheck::Failed
+                    }
+                };
+                // The flow may have started before the release was known, or
+                // a Download chosen elsewhere waited for the check.
+                let requested = std::mem::take(&mut this.download_requested);
+                if (this.flow.active && this.flow.step == Step::Ready && this.package.is_none()) || requested
+                {
+                    this.acquire_latest(cx);
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// The Download button: the latest release, or first a new release check
+    /// when the last one failed, whose completion starts the download.
+    pub fn download_latest(&mut self, cx: &mut Context<Self>) {
+        match self.release {
+            ReleaseCheck::Ready { .. } => self.acquire_latest(cx),
+            // The check under way starts the download when it ends.
+            ReleaseCheck::Checking => self.download_requested = true,
+            ReleaseCheck::NotChecked | ReleaseCheck::Failed => {
+                self.download_requested = true;
+                self.check_for_updates(cx);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Downloads the latest Atlas package (or reuses a verified cached copy)
+    /// and unpacks it so it can be installed.
+    pub fn acquire_latest(&mut self, cx: &mut Context<Self>) {
+        if self.bundled() || self.locked() || self.acquisition.is_busy() || !self.can_download_latest() {
+            return;
+        }
+        // `can_download_latest` is false until the release is known.
+        let Some(release) = self.release.release().cloned() else { return };
+        if self.latest_predates_app() {
+            // Its version already says this app cannot install it.
+            self.acquisition =
+                Acquisition::Failed(AcquireProblem::Unsupported { version: release.version().to_owned() });
+            cx.notify();
+            return;
+        }
+        let Some(asset) = release.package_asset().cloned() else {
+            self.acquisition =
+                Acquisition::Failed(AcquireProblem::NoPackageAsset { version: release.version().to_owned() });
+            cx.notify();
+            return;
+        };
+        let version = release.version().to_owned();
+        let downloads = self.env.paths.downloads();
+        let packages = self.env.paths.packages();
+        self.acquisition = Acquisition::Downloading { received: 0, total: asset.size };
+        let generation = self.acquisition_generation.next();
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.acquisition_cancel = cancel.clone();
+        self.download_heard = Instant::now();
+        self.watch_download(generation, cx);
+        cx.notify();
+
+        self.acquisition_task = Some(cx.spawn(async move |this, cx| {
+            let (tx, mut rx) = futures::channel::mpsc::unbounded::<Progress>();
+            let task = cx.background_executor().spawn(async move {
+                let cancelled = || cancel.load(Ordering::Relaxed);
+                let path = match releases::cached_in(&downloads, &asset) {
+                    Some(path) => path,
+                    None => {
+                        let mut last_percent = u64::MAX;
+                        let mut last_sent = Instant::now();
+                        releases::download_into(&downloads, &asset, cancelled, |received, total| {
+                            let percent = received * 100 / total.max(1);
+                            if percent != last_percent || last_sent.elapsed() >= PROGRESS_HEARTBEAT {
+                                last_percent = percent;
+                                last_sent = Instant::now();
+                                let _ = tx.unbounded_send(Progress::Download(received, total));
+                            }
+                        })?
+                    }
+                };
+                anyhow::ensure!(!cancelled(), "the download was cancelled");
+                extract_reporting(&path, &packages, &tx).map(|(dir, manifest)| (dir, manifest, path))
+            });
+            while let Some(progress) = rx.next().await {
+                this.update(cx, |this, cx| {
+                    if this.acquisition_generation != generation {
+                        return;
+                    }
+                    this.acquisition = match progress {
+                        Progress::Download(received, total) => {
+                            this.download_heard = Instant::now();
+                            Acquisition::Downloading { received, total }
+                        }
+                        Progress::Extract(done, total) => Acquisition::Extracting { done, total },
+                    };
+                    cx.notify();
+                })
+                .ok();
+            }
+            let result = task.await;
+            this.update(cx, |this, cx| {
+                this.finish_acquisition(
+                    generation,
+                    result.map(|(dir, manifest, path)| (dir, manifest, Origin::Release(version), Some(path))),
+                    cx,
+                );
+            })
+            .ok();
+        }));
+    }
+
+    /// Gives up on download `generation` once it has received nothing for
+    /// [`DOWNLOAD_STALL`]. Its transfer, blocked in a read, stops when that
+    /// read returns or its own timeout ends it; nothing it produces is
+    /// applied.
+    fn watch_download(&self, generation: Generation, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(DOWNLOAD_STALL / 4).await;
+                let watching = this
+                    .update(cx, |this, cx| {
+                        if this.acquisition_generation != generation
+                            || !matches!(this.acquisition, Acquisition::Downloading { .. })
+                        {
+                            return false;
+                        }
+                        if this.download_heard.elapsed() < DOWNLOAD_STALL {
+                            return true;
+                        }
+                        log::warn!(
+                            "The package download received nothing for {DOWNLOAD_STALL:?}; stopping it"
+                        );
+                        this.cancel_acquisition();
+                        this.acquisition = Acquisition::Failed(AcquireProblem::Stalled);
+                        cx.notify();
+                        false
+                    })
+                    .unwrap_or(false);
+                if !watching {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Stops a download the user no longer wants (see [`AppModel::cancel_acquisition`]).
+    pub fn cancel_download(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.acquisition, Acquisition::Downloading { .. }) {
+            self.cancel_acquisition();
+            cx.notify();
+        }
+    }
+
+    /// Unpacks the Atlas package built into a tester build: written to the
+    /// downloads folder on a worker, then loaded like any other file. Waits
+    /// for startup recovery, which retries this once it knows nothing else
+    /// is running. A no-op in other builds.
+    pub fn load_bundled_package(&mut self, cx: &mut Context<Self>) {
+        #[cfg(feature = "embedded-package")]
+        {
+            if self.recovering || self.locked() || self.acquisition.is_busy() {
+                return;
+            }
+            let paths = self.env.paths.clone();
+            self.acquisition = Acquisition::Extracting { done: 0, total: 0 };
+            let generation = self.acquisition_generation.next();
+            cx.notify();
+            self.acquisition_task = Some(cx.spawn(async move |this, cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move { crate::services::embedded::materialize(&paths) })
+                    .await;
+                this.update(cx, |this, cx| {
+                    if this.acquisition_generation != generation {
+                        return;
+                    }
+                    this.acquisition_task = None;
+                    match result {
+                        Ok(path) => {
+                            this.acquisition = Acquisition::Idle;
+                            this.load_package_file(path, cx);
+                        }
+                        Err(error) => {
+                            log::error!("Could not write the bundled package: {error:#}");
+                            this.acquisition =
+                                Acquisition::Failed(AcquireProblem::Other { error: format!("{error:#}") });
+                            cx.notify();
+                        }
+                    }
+                })
+                .ok();
+            }));
+        }
+        #[cfg(not(feature = "embedded-package"))]
+        {
+            let _ = cx;
+        }
+    }
+
+    /// Whether "Open package file" can act: the flow may change and no
+    /// package is being unpacked. A download under way gives way to a
+    /// chosen file.
+    pub fn may_choose_package(&self) -> bool {
+        !self.locked() && !matches!(self.acquisition, Acquisition::Extracting { .. })
+    }
+
+    /// Lets the user pick a package file they already have. A download under way
+    /// carries on until a file is actually chosen, then gives way to it.
+    pub fn choose_local_package(&mut self, cx: &mut Context<Self>) {
+        if !self.may_choose_package() {
+            return;
+        }
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(t!("file-dialog-open-package").into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = receiver.await else { return };
+            let Some(path) = paths.into_iter().next() else { return };
+            this.update(cx, |this, cx| this.open_chosen_package(path, cx)).ok();
+        })
+        .detach();
+    }
+
+    /// Opens the file chosen in "Open package file" in place of whatever
+    /// was still being prepared, even a download that began unpacking while
+    /// the dialog was open.
+    pub(super) fn open_chosen_package(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.acquisition.is_busy() && !self.locked() {
+            self.cancel_acquisition();
+        }
+        self.load_package_file(path, cx);
+    }
+
+    /// Unpacks a package file the user already has (file dialog, `--package`,
+    /// or "Open with" on the package). A download under way gives way to it.
+    /// Any file but an `.vantapkg` is refused with an explanation.
+    pub fn load_package_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let refused = if self.locked() {
+            Some("an install, an ISO job, preparation or a put-back is running")
+        } else if matches!(self.acquisition, Acquisition::Extracting { .. }) {
+            Some("another package is still unpacking")
+        } else {
+            None
+        };
+        if let Some(reason) = refused {
+            log::warn!("Not opening package {}: {reason}", path.display());
+            return;
+        }
+        log::info!("Opening package: {}", path.display());
+        // Get ready may have begun downloading the latest release by itself
+        // before a package given at launch got here.
+        if matches!(self.acquisition, Acquisition::Downloading { .. }) {
+            self.cancel_acquisition();
+        }
+        let packages = self.env.paths.packages();
+        self.acquisition = Acquisition::Extracting { done: 0, total: 0 };
+        let generation = self.acquisition_generation.next();
+        cx.notify();
+        self.acquisition_task = Some(cx.spawn(async move |this, cx| {
+            let (tx, mut rx) = futures::channel::mpsc::unbounded::<Progress>();
+            let source = path.clone();
+            let task =
+                cx.background_executor().spawn(async move { extract_reporting(&source, &packages, &tx) });
+            while let Some(Progress::Extract(done, total)) = rx.next().await {
+                this.update(cx, |this, cx| {
+                    if this.acquisition_generation != generation {
+                        return;
+                    }
+                    this.acquisition = Acquisition::Extracting { done, total };
+                    cx.notify();
+                })
+                .ok();
+            }
+            let result = task.await;
+            this.update(cx, |this, cx| {
+                this.finish_acquisition(
+                    generation,
+                    result.map(|(dir, manifest)| {
+                        // A tester build's own package needs no file: ISO creation adds it.
+                        if bundled_holds(&dir) {
+                            (dir, manifest, Origin::Bundled, None)
+                        } else {
+                            (dir, manifest, Origin::LocalFile(path.clone()), Some(path))
+                        }
+                    }),
+                    cx,
+                );
+            })
+            .ok();
+        }));
+    }
+
+    /// Stops an acquisition and forgets it. A download stops at its next
+    /// chunk and removes its partial file; an extraction already under way
+    /// on a worker runs to its end on its own. Nothing either produces is
+    /// applied.
+    pub(super) fn cancel_acquisition(&mut self) {
+        self.acquisition_cancel.store(true, Ordering::Relaxed);
+        self.acquisition_task = None;
+        self.acquisition_generation.next();
+        if self.acquisition.is_busy() {
+            self.acquisition = Acquisition::Idle;
+        }
+    }
+
+    fn finish_acquisition(
+        &mut self,
+        generation: Generation,
+        result: anyhow::Result<(PathBuf, Manifest, Origin, Option<PathBuf>)>,
+        cx: &mut Context<Self>,
+    ) {
+        if generation != self.acquisition_generation {
+            return;
+        }
+        self.acquisition_task = None;
+        if self.flow.locked() {
+            // An install is running with the package it was given.
+            self.acquisition = Acquisition::Idle;
+            cx.notify();
+            return;
+        }
+        match result {
+            Ok((dir, manifest, origin, archive)) => {
+                // Keep the user's choices that still exist; the rest get defaults below.
+                let valid: BTreeSet<String> =
+                    manifest.choices.iter().flat_map(|c| c.options.iter().map(|o| o.id.clone())).collect();
+                self.options.retain(|o| valid.contains(o));
+                if let Some(saved) = self.iso_initial_options.take() {
+                    if iso::validate_options(&manifest, &saved).is_ok() {
+                        self.options = saved.into_iter().collect();
+                    } else {
+                        log::warn!(
+                            "The staged Vanta options do not match the selected package; using the normal options flow."
+                        );
+                    }
+                }
+                log::info!(
+                    "Package ready: version={}; requirements={:?}; identity={:?}",
+                    manifest.version,
+                    manifest.requirements,
+                    package::identity(&dir)
+                );
+                self.package = Some(PackageSource { dir, manifest, origin, archive });
+                self.fill_radio_defaults();
+                self.acquisition = Acquisition::Idle;
+                // Supported builds may differ between packages.
+                if self.flow.active {
+                    self.run_checks(cx);
+                } else {
+                    self.checks.clear();
+                    self.check_tasks.clear();
+                }
+                self.save_draft(cx);
+            }
+            Err(error) => {
+                log::error!("Package acquisition failed: {error:#}");
+                let problem = if let Some(unsupported) = error.downcast_ref::<package::Unsupported>() {
+                    AcquireProblem::Unsupported { version: unsupported.version.clone() }
+                } else if let Some(incomplete) = error.downcast_ref::<package::Incomplete>() {
+                    AcquireProblem::Incomplete { version: incomplete.version.clone() }
+                } else if error.is::<package::NotAPackage>() {
+                    AcquireProblem::NotAPackage
+                } else if let Some(outdated) = error.downcast_ref::<package::ManagerOutdated>() {
+                    AcquireProblem::ManagerOutdated { required: outdated.required.clone() }
+                } else {
+                    AcquireProblem::Other { error: format!("{error:#}") }
+                };
+                self.acquisition = Acquisition::Failed(problem);
+            }
+        }
+        cx.notify();
+    }
+}
+
+/// Unpacks the package at `path` under `packages`, sending its progress on
+/// `tx` once per whole percent.
+fn extract_reporting(
+    path: &Path,
+    packages: &Path,
+    tx: &UnboundedSender<Progress>,
+) -> anyhow::Result<(PathBuf, Manifest)> {
+    let mut last_percent = usize::MAX;
+    package::extract_into(path, packages, |done, total| {
+        let percent = done * 100 / total.max(1);
+        if percent != last_percent {
+            last_percent = percent;
+            let _ = tx.unbounded_send(Progress::Extract(done, total));
+        }
+    })
+}

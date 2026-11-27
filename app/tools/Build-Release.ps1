@@ -1,0 +1,55 @@
+#Requires -Version 7.2
+# Build a portable executable for clean Windows installations. An explicit target
+# keeps crt-static away from host build scripts and proc-macro DLLs.
+#
+# Without parameters this is the stable executable. -RcId and -EmbedPackage together
+# build the tester variant that carries one Vanta package (the same environment and
+# feature ../../tools/release/build-rc.sh uses); see docs/rc-testers-build.md.
+[CmdletBinding()]
+param(
+    [switch]$Json,
+    # The candidate id shown to testers, for example 0.6.0-rc.1.
+    [string]$RcId,
+    # The Vanta package (.vantapkg) to bake into the executable.
+    [string]$EmbedPackage
+)
+
+$ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($RcId) -ne [string]::IsNullOrWhiteSpace($EmbedPackage)) {
+    throw 'Pass -RcId and -EmbedPackage together (a tester build), or neither (the stable build).'
+}
+$tester = -not [string]::IsNullOrWhiteSpace($RcId)
+if ($tester) {
+    # Resolve before changing directory: the path is relative to the caller.
+    if (-not (Test-Path -LiteralPath $EmbedPackage -PathType Leaf)) { throw "-EmbedPackage does not name a file: $EmbedPackage" }
+    $EmbedPackage = (Resolve-Path -LiteralPath $EmbedPackage).ProviderPath
+}
+
+$previous = @{
+    CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS
+    CARGO_INCREMENTAL = $env:CARGO_INCREMENTAL
+    VANTA_EMBED_PACKAGE = $env:VANTA_EMBED_PACKAGE
+    VANTA_RC_ID = $env:VANTA_RC_ID
+}
+Push-Location (Split-Path -Parent $PSScriptRoot)
+try {
+    & (Join-Path $PSScriptRoot 'Export-DependencyNotices.ps1') -Check
+    $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = '-C target-feature=+crt-static'
+    # Incremental state can break release links.
+    $env:CARGO_INCREMENTAL = '0'
+    $buildArguments = @('build', '--release', '--locked', '--target', 'x86_64-pc-windows-msvc')
+    if ($tester) {
+        $env:VANTA_EMBED_PACKAGE = $EmbedPackage
+        $env:VANTA_RC_ID = $RcId
+        $buildArguments += @('--features', 'embedded-package')
+    }
+    if ($Json) { $buildArguments += '--message-format=json-render-diagnostics' }
+    cargo @buildArguments
+    if ($LASTEXITCODE -ne 0) { throw "Vanta Manager release build failed ($LASTEXITCODE)." }
+}
+finally {
+    foreach ($name in $previous.Keys) {
+        [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process')
+    }
+    Pop-Location
+}

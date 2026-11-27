@@ -1,0 +1,94 @@
+name: Bug report
+description: Report a problem with Vanta or Vanta Manager.
+
+labels:
+- bug
+
+body:
+- type: checkboxes
+  attributes:
+    label: Before you continue
+    description: Make sure you meet these criteria. If you don't, the maintainers may close and lock your issue.
+    options:
+    - label: "I agree to follow Vanta's Code of Conduct"
+      required: true
+    - label: "I have searched the issue tracker and this issue hasn't been reported already"
+      required: true
+    - label: "I have searched the Vanta documentation for a solution"
+      required: true
+    - label: "I'm on the latest Vanta release, installed or updated on a supported Windows release"
+      required: true
+
+- type: textarea
+  attributes:
+    label: Description
+    description: Describe the bug in a sentence or two.
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Steps to reproduce
+    description: List the steps that make the bug happen. Add screenshots if they help.
+    placeholder: |
+      1. First step
+      2. Second step
+      3. And so on
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Expected behaviour
+    description: What you expected to happen.
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Actual behaviour
+    description: What happened instead. Add screenshots if they help.
+  validations:
+    required: true
+
+- type: input
+  attributes:
+    label: Vanta version
+    description: >-
+      The heading of Vanta Manager's home page shows "Vanta" followed by the installed version.
+      Windows also records it: run `winver` and look for "Vanta v" followed by the version, or "Vanta Playbook v" on releases before 0.6.
+      For a problem in Vanta Manager itself, also give the version shown beside **Vanta Manager** under **Settings** > **About**.
+  validations:
+    required: true
+
+- type: input
+  attributes:
+    label: Windows version
+    description: In Windows, open **Settings** > **System** > **About**, and copy the edition, version and OS build under **Windows specifications**.
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Hardware
+    description: Your PC's main components help us find problems that only some hardware has.
+    placeholder: |
+      - Processor: brand and model
+      - Memory: size
+      - Storage: size, brand and type
+      - Graphics: brand, model and driver version
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Diagnostics
+    description: >-
+      In Vanta Manager, open **Settings** with the gear button in the title bar, choose **Export diagnostics** under **Help and feedback**, then **Show in folder**, and attach the ZIP here.
+      Vanta removes your user name, PC name and email addresses from it.
+      To send diagnostics privately instead, choose **Send a report** in the same place, and paste the report reference here.
+
+- type: textarea
+  attributes:
+    label: Additional context
+    description: Anything else that might help, such as what you've already tried.

@@ -1,0 +1,65 @@
+#Requires -Version 7.2
+<#
+.SYNOPSIS
+    Builds and exports the exact Windows GPUI release shaders for Linux builds.
+#>
+[CmdletBinding()]
+param()
+
+$ErrorActionPreference = 'Stop'
+if (-not $IsWindows) { throw 'Shader export requires Windows and the Windows SDK FXC compiler.' }
+$app = Split-Path -Parent $PSScriptRoot
+$backend = Join-Path $app 'vendor/gpui-pre-windows'
+# Resolve Cargo's package ID rather than guessing URL escaping in paths with spaces.
+Push-Location $app
+try {
+    $packageId = & cargo pkgid --locked -p gpui-pre-windows
+    if ($LASTEXITCODE) { throw 'Could not resolve the GPUI Windows package ID.' }
+    $outDirectories = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    & (Join-Path $PSScriptRoot 'Build-Release.ps1') -Json | ForEach-Object {
+        $line = [string]$_
+        if ($line.StartsWith('{')) {
+            $message = $line | ConvertFrom-Json
+            if ($message.reason -eq 'build-script-executed' -and $message.package_id -ceq $packageId) {
+                $null = $outDirectories.Add([string]$message.out_dir)
+            }
+        } else { Write-Host $line }
+    }
+    if ($outDirectories.Count -ne 1) {
+        throw "Expected exactly one GPUI release build-script output, found $($outDirectories.Count)."
+    }
+    $out = @($outDirectories)[0]
+    $bytes = Join-Path $out 'shaders_bytes.rs'
+    $fxcPath = [IO.File]::ReadAllText((Join-Path $out 'fxc-path.txt'))
+    $fxc = Get-Item -LiteralPath $fxcPath
+    $prebuilt = Join-Path $backend 'prebuilt'
+    New-Item -ItemType Directory -Path $prebuilt -Force | Out-Null
+    $hashLines = foreach ($inputPath in @('src/shaders.hlsl', 'src/alpha_correction.hlsl')) {
+        $hash = (Get-FileHash -LiteralPath (Join-Path $backend $inputPath) -Algorithm SHA256).Hash.ToLowerInvariant()
+        "$hash  $inputPath"
+    }
+    $utf8 = [Text.UTF8Encoding]::new($false)
+    [IO.File]::WriteAllText((Join-Path $prebuilt 'inputs.sha256'), ($hashLines -join "`n") + "`n", $utf8)
+    Copy-Item -LiteralPath $bytes -Destination (Join-Path $prebuilt 'shaders_bytes.rs') -Force
+    # The README records the compiler by version and hash only, so it names no machine's paths.
+    $readme = @"
+# Precompiled Windows GPUI shaders
+
+``app/tools/Export-ShaderBytes.ps1`` generates these files from the output directory of Cargo's release build script.
+Linux builds check ``inputs.sha256``, then copy ``shaders_bytes.rs`` into their own build output, so they never run FXC or Wine.
+
+- FXC file version: ``$($fxc.VersionInfo.FileVersion)``
+- FXC SHA-256: ``$((Get-FileHash -LiteralPath $fxcPath -Algorithm SHA256).Hash.ToLowerInvariant())``
+- Profiles: ``vs_4_1`` and ``ps_4_1``, with optimisation level ``/O3``.
+- Flags: ``/T <profile> /E <entry> /Fh <header> /Vn <constant> /O3 <source>``.
+- ``shaders.hlsl``: vertex and fragment pairs for ``quad``, ``opaque_quad``, ``shadow``, ``path_tile``, ``underline``, ``monochrome_sprite``, ``subpixel_sprite`` and ``polychrome_sprite``.
+- The source includes ``alpha_correction.hlsl``. Both inputs are hashed.
+
+Regenerate these files on Windows after changing any input, entry point, profile, compiler or compiler flag.
+Without Windows, download the ``vanta-gpui-shaders`` artifact from the Desktop app workflow.
+Commit all three files together.
+Inputs and exported text use LF line endings.
+"@
+    [IO.File]::WriteAllText((Join-Path $prebuilt 'README.md'), $readme.Replace("`r`n", "`n") + "`n", $utf8)
+    Write-Host "Exported release shaders to $prebuilt"
+} finally { Pop-Location }

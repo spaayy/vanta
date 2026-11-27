@@ -1,0 +1,171 @@
+<#
+.SYNOPSIS
+    CLI entry point for every VantaDesktop toggle launcher.
+.DESCRIPTION
+    Every generated VantaDesktop and Toolbox launcher is a two-line stub that calls the
+    shared body Invoke-VantaToggleLauncher.cmd beside this script, which anchors to the
+    protected command host, sanitises the environment, validates the flag grammar and
+    then runs:
+
+        powershell.exe -NoProfile -NoLogo -ExecutionPolicy Bypass -File
+            "%VantaWindowsRoot%\VantaModules\Scripts\Entry\Invoke-Toggle.ps1"
+            -Name <SettingName> [-State <State>] -LauncherPath "<stub path>"
+            [<canonical launcher flags>]
+
+    Remaining arguments carry the launcher flags: /silent (and /quiet),
+    /justcontext and /noAction, with either / or - prefixes, case-insensitive.
+
+    An interactive run presents itself through the Vanta.Core console vocabulary
+    (docs/console-presentation.md) and owns the single failure block; a silent run keeps
+    the full diagnostic log echo its caller captures.
+.NOTES
+    Exit codes: 0 = success, 1 = failure.
+#>
+# PositionalBinding is disabled so bare launcher flags (e.g. a menu launcher invoked as
+# '... -Name BootLogo -LauncherPath "..." /silent') fall through to $Rest instead of
+# binding positionally to -State.
+[CmdletBinding(PositionalBinding = $false)]
+param(
+    [string]$Name,
+
+    [string]$State,
+
+    [string]$LauncherPath,
+
+    [switch]$MachineOnly,
+
+    [ValidateSet('Plan', 'User', 'Machine')]
+    [string]$Phase,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Rest
+)
+
+$scriptsRoot = [IO.Path]::GetDirectoryName($PSScriptRoot)
+$trustBootstrap = [IO.Path]::Combine($scriptsRoot, 'Initialize-VantaPowerShell.ps1')
+if (-not [IO.File]::Exists($trustBootstrap)) {
+    throw "The PowerShell trust bootstrap is missing at '$trustBootstrap'."
+}
+. $trustBootstrap
+
+Set-StrictMode -Version 3.0
+
+# Normalise canonical flags supplied by a generated launcher or a direct caller.
+$silent = [bool]$Phase
+$justContext = $false
+$noExplorerRestart = $false
+foreach ($token in @($Rest)) {
+    if ([string]::IsNullOrWhiteSpace($token)) {
+        continue
+    }
+
+    switch ($token.Trim().TrimStart('/', '-').ToLowerInvariant()) {
+        'silent' { $silent = $true }
+        'quiet' { $silent = $true }
+        'justcontext' { $justContext = $true }
+        'noaction' { $noExplorerRestart = $true }
+        default {
+            # Generated launchers reject unknown tokens before this point. Keep
+            # direct invocation backward-compatible by ignoring unrelated extras.
+        }
+    }
+}
+
+$title = if ($LauncherPath) { [IO.Path]::GetFileNameWithoutExtension($LauncherPath) } else { $Name }
+
+try {
+    # The bootstrap above rooted command auto-loading in this copy of Vanta; import the core
+    # presentation and the toggle engine by their exact manifests so inherited per-user
+    # modules cannot shadow them. Core first, so the engine's nested import shares the
+    # instance whose console style is set here.
+    $localModules = Join-Path -Path $scriptsRoot -ChildPath 'Modules'
+    $coreManifest = Join-Path -Path $localModules -ChildPath 'Vanta.Core\Vanta.Core.psd1'
+    $toggleManifest = Join-Path -Path $localModules -ChildPath 'Vanta.Toggles\Vanta.Toggles.psd1'
+    Import-Module -Name $coreManifest -ErrorAction Stop
+    Import-Module -Name $toggleManifest -Force -ErrorAction Stop
+
+    if (-not $silent) {
+        Set-VantaLogConsoleStyle -Style Interactive
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        throw 'Invoke-Toggle.ps1 requires -Name <SettingName>.'
+    }
+    # Only these two can undo what Vanta Manager turned on to update Windows.
+    if ($Name -in @('ToggleWindowsUpdates', 'PauseUpdates')) {
+        . ([IO.Path]::Combine($scriptsRoot, 'Preparation', 'WindowsTransition.ps1'))
+        Assert-VantaToggleAllowedDuringTransition -Name $Name
+    }
+
+    $invokeParams = @{
+        Name              = $Name
+        Silent            = $silent
+        JustContext       = $justContext
+        NoExplorerRestart = $noExplorerRestart
+        MachineOnly       = [bool]$MachineOnly
+    }
+    if ($Phase) {
+        $invokeParams['Phase'] = $Phase
+    }
+    if ($State) {
+        $invokeParams['State'] = $State
+    }
+    if ($LauncherPath) {
+        $invokeParams['LauncherPath'] = $LauncherPath
+    }
+
+    Invoke-VantaToggle @invokeParams
+    exit 0
+}
+catch {
+    $exitCode = 1
+    $adminChildExitKey = 'Vanta.Toggle.AdminChildExitCode'
+    if ($null -ne $_.Exception.Data -and $_.Exception.Data.Contains($adminChildExitKey)) {
+        try {
+            $candidateExitCode = [int]$_.Exception.Data[$adminChildExitKey]
+            if ($candidateExitCode -ne 0) {
+                $exitCode = $candidateExitCode
+            }
+        }
+        catch {
+            $exitCode = 1
+        }
+    }
+
+    # Silent launches have no interactive window, so the failure must reach the
+    # captured process output (and the shared install log when available) for the
+    # caller's transcript; the nonzero exit code alone carries no message. An
+    # interactive run shows the reason once, in its failure block.
+    $reason = [string]$_.Exception.Message
+    $failureMessage = "Applying toggle '$Name' failed: $reason"
+    $failureLogged = $false
+    $detailsPath = $null
+    try {
+        if (Get-Command -Name Write-VantaLog -ErrorAction SilentlyContinue) {
+            Write-VantaLog -Level Error -Message $failureMessage -ErrorRecord $_ -NoConsole:(-not $silent)
+            $failureLogged = $true
+        }
+        if (Get-Command -Name Get-VantaInstallLogPath -ErrorAction SilentlyContinue) {
+            $detailsPath = Get-VantaInstallLogPath
+        }
+    }
+    catch {
+        $failureLogged = $false
+    }
+    if (-not $failureLogged) {
+        Write-Host $failureMessage -ForegroundColor Red
+    }
+
+    if (-not $silent) {
+        if (Get-Command -Name Write-VantaNotApplied -ErrorAction SilentlyContinue) {
+            Write-VantaNotApplied -Title $title -Reason $reason -DetailsPath $detailsPath
+            Wait-VantaExit
+        }
+        else {
+            Write-Host "Not applied: $title." -ForegroundColor Red
+            Write-Host "Error: $reason" -ForegroundColor Red
+            $null = Read-Host 'Press Enter to exit'
+        }
+    }
+    exit $exitCode
+}

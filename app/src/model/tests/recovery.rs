@@ -1,0 +1,359 @@
+//! What a window finds when it opens: a held or unreadable install record,
+//! and installs that ended while no window was open.
+
+use std::time::Duration;
+
+use crate::model::recovery::StartupInspection;
+use crate::model::test_harness::{
+    act, completed_session, completed_state, fixture, marking_package, model_as_started, new_model, read,
+    run_model_test, save_draft, settle, wait_for, wait_for_release, wait_on_disk,
+};
+use crate::model::{InstallBlock, Notice, Page, RunState, Step, UpdatePath};
+use crate::services::atlas_state::InstallIdentity;
+use crate::services::installer::{InstallOutcome, Phase};
+use crate::services::package;
+use crate::services::session::{self, LaunchLock};
+use crate::services::settings::InstallDraft;
+
+/// While another window holds the launch lock, startup can't tell whether an
+/// install is running, and Home starts nothing until it can.
+#[test]
+fn nothing_starts_while_startup_waits_for_the_launch_lock() {
+    run_model_test(|mut cx| async move {
+        let (_temp, _, env) = fixture("startup-lock");
+        let held = LaunchLock::acquire(&env.paths.session()).unwrap();
+        let model = new_model(&mut cx, env);
+        assert!(read(&cx, &model, |m| m.recovering));
+        act(&mut cx, &model, |m, cx| m.begin_install(cx));
+        assert!(!read(&cx, &model, |m| m.flow.active));
+        drop(held);
+        wait_for(&cx, &model, "startup recovery", |m| !m.recovering).await;
+        act(&mut cx, &model, |m, cx| m.begin_install(cx));
+        assert!(read(&cx, &model, |m| m.flow.active));
+        settle(&cx, &model).await;
+    });
+}
+
+/// An install record that can't be read holds the flow at Get ready, which
+/// explains it, until a new reading succeeds. The record itself is never
+/// removed: whose it is is unknown.
+#[test]
+fn an_unreadable_install_record_holds_the_flow_at_get_ready_until_it_reads_cleanly() {
+    run_model_test(|mut cx| async move {
+        let (_temp, _, env) = fixture("record-unreadable");
+        let record = env.paths.session().record;
+        std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+        std::fs::write(&record, "{ not json").unwrap();
+        save_draft(
+            &env,
+            InstallDraft {
+                step: "security".into(),
+                flow: Some("earlier-window".into()),
+                preparation_ready: true,
+                ..InstallDraft::default()
+            },
+        );
+        let model = new_model(&mut cx, env.clone());
+        wait_for(&cx, &model, "the draft", |m| m.flow.active && m.checks_complete()).await;
+        read(&cx, &model, |m| {
+            assert!(matches!(m.install_block(), Some(InstallBlock::RecordUnreadable { .. })));
+            assert!(m.start_block().is_none(), "the elevated window reads it again for itself");
+            assert!(matches!(m.notice, Some(Notice::SessionUnreadable { .. })));
+            assert_eq!(m.flow.step, Step::Ready, "not past the step that explains it");
+            assert_eq!(m.page, Page::Install);
+            assert!(!m.ready_to_continue());
+        });
+        act(&mut cx, &model, |m, cx| m.next_step(cx));
+        assert_eq!(read(&cx, &model, |m| m.flow.step), Step::Ready);
+
+        // A reading that finds it still unreadable keeps the flow held.
+        act(&mut cx, &model, |m, cx| m.run_checks(cx));
+        wait_for(&cx, &model, "the checks", |m| m.checks_complete()).await;
+        cx.background_executor().timer(Duration::from_millis(200)).await;
+        assert!(read(&cx, &model, |m| m.record_problem.is_some()));
+        assert!(record.exists(), "an unreadable record is never removed");
+
+        // A launch's answer outranks a reading that was already under way.
+        act(&mut cx, &model, |m, cx| {
+            let earlier = m.record_generation;
+            m.set_record_problem(Some("found by the launch".into()));
+            m.finish_record_check(earlier, StartupInspection::None, cx);
+            assert_eq!(m.record_problem.as_deref(), Some("found by the launch"));
+        });
+
+        std::fs::remove_file(&record).unwrap();
+        act(&mut cx, &model, |m, cx| m.run_checks(cx));
+        wait_for(&cx, &model, "a clean reading", |m| m.record_problem.is_none()).await;
+        read(&cx, &model, |m| {
+            assert!(m.notice.is_none(), "Home no longer reports it");
+            assert!(m.install_block().is_none());
+        });
+    });
+}
+
+#[test]
+fn a_success_found_on_reopening_shows_its_result_and_clears_its_draft() {
+    run_model_test(async move |mut cx| {
+        let (temp, _, env) = fixture("model-recovered-success");
+        let (package, _) = marking_package(&temp, 0);
+        let record = completed_session(&env, &package, true);
+        assert_eq!(record.exit_code(), Some(0));
+        save_draft(
+            &env,
+            InstallDraft {
+                step: "install".into(),
+                options: vec!["defender-enable".into()],
+                package_dir: Some(record.request.package_dir.clone()),
+                session: Some(record.id.clone()),
+                flow: Some("launcher".into()),
+                ..InstallDraft::default()
+            },
+        );
+
+        let model = new_model(&mut cx, env.clone());
+        wait_for(&cx, &model, "the recovered result", |m| matches!(m.flow.run, RunState::Finished(_))).await;
+        read(&cx, &model, |m| {
+            assert_eq!(m.flow.run, RunState::Finished(InstallOutcome::Succeeded));
+            assert!(m.install_in_progress(), "the success view shows until the user leaves it");
+            assert_eq!(m.session.as_ref().map(|s| s.id.as_str()), Some(record.id.as_str()));
+            assert!(m.attempt.log_total > 0, "the log was replayed");
+            assert!(m.attempt.recovered);
+            assert!(m.restart_countdown().is_none(), "no countdown is claimed for a restart nobody watched");
+            assert!(m.settings.draft.is_none(), "the draft that launched this install is finished");
+        });
+        wait_on_disk(&cx, &env, "the launching draft to be cleared", |s| s.draft.is_none()).await;
+        assert!(
+            session::load(&env.paths.session()).unwrap().is_some(),
+            "the record stays until acknowledged"
+        );
+
+        // Leaving releases the record, and a new flow starts from nothing.
+        act(&mut cx, &model, |m, cx| m.cancel_flow(cx));
+        wait_for_release(&cx, &env, "the record to be released on leaving").await;
+        assert!(read(&cx, &model, |m| !m.flow.active && m.page == Page::Home));
+    });
+}
+
+/// A success found after the restart it asked for is closed out at once, as
+/// the "Atlas is installed" window covers it, but that window still says
+/// what the install couldn't apply, as Atlas recorded it.
+#[test]
+fn a_success_found_after_its_restart_still_says_what_it_recorded_otherwise() {
+    run_model_test(async move |mut cx| {
+        let (temp, machine, env) = fixture("model-recovered-after-restart");
+        let mut state = completed_state("0.6.0");
+        state.options = vec!["defender-disable".into()];
+        state.history = vec![
+            serde_json::from_value(serde_json::json!({
+                "version": "0.6.0", "mode": "Fresh", "completedAt": "2026-09-30T20:06:21.9690173+00:00",
+                "notApplied": ["defender-disable", "defender-enable"],
+            }))
+            .unwrap(),
+        ];
+        *machine.state.lock().unwrap() = Some(state);
+        let (package, _) = marking_package(&temp, 0);
+        let mut record = completed_session(&env, &package, true);
+        // Started long before Windows last started.
+        record.started_at = "2000-01-01T00:00:00Z".into();
+        session::save(&env.paths.session(), &record).unwrap();
+
+        let model = new_model(&mut cx, env.clone());
+        wait_for_release(&cx, &env, "the finished install to be closed out").await;
+        read(&cx, &model, |m| {
+            assert!(m.session.is_none() && !m.install_in_progress(), "nothing left to follow");
+            let not_applied = ["defender-disable".to_owned(), "defender-enable".to_owned()];
+            assert_eq!(m.choices_not_applied(), Some(&not_applied[..]));
+        });
+        settle(&cx, &model).await;
+    });
+}
+
+#[test]
+fn a_failure_found_on_reopening_runs_the_checks_its_retry_needs() {
+    run_model_test(async move |mut cx| {
+        let (temp, _, env) = fixture("model-recovered-failure");
+        let (package, marker) = marking_package(&temp, 1);
+        let record = completed_session(&env, &package, false);
+        assert_eq!(record.exit_code(), Some(1));
+        std::fs::remove_file(&marker).unwrap();
+
+        save_draft(
+            &env,
+            InstallDraft {
+                step: "install".into(),
+                options: record.request.options.clone(),
+                package_dir: Some(record.request.package_dir.clone()),
+                session: Some(record.id.clone()),
+                flow: Some("failed-install-launcher".into()),
+                // An install only launches once Windows is prepared.
+                preparation_ready: true,
+                ..InstallDraft::default()
+            },
+        );
+
+        let model = model_as_started(&mut cx, env);
+        wait_for(&cx, &model, "the recovered failure", |m| matches!(m.flow.run, RunState::Finished(_))).await;
+        read(&cx, &model, |m| {
+            assert_eq!(m.flow.run, RunState::Finished(InstallOutcome::Failed(1)));
+            assert_eq!(m.flow_id.as_deref(), Some("failed-install-launcher"));
+            assert!(m.preparation.ready(), "the launching draft's finished preparation is kept");
+            assert_eq!(m.flow.step, Step::Install);
+            assert!(m.package.is_some(), "the recorded package is picked up");
+            assert!(!m.checks.is_empty(), "the readiness checks the retry depends on were started");
+            assert!(m.attempt.phase >= Phase::Applying, "the replayed log set the phase");
+        });
+        wait_for(&cx, &model, "the checks and a security reading", |m| {
+            m.checks_complete() && m.security_fresh()
+        })
+        .await;
+        assert!(read(&cx, &model, |m| m.can_install()), "Try again is usable without going back a step");
+
+        // And the retry is a real new attempt with the current choices.
+        act(&mut cx, &model, |m, cx| m.start_install(cx));
+        wait_for(&cx, &model, "the retry to run", |m| {
+            matches!(m.flow.run, RunState::Finished(_))
+                && m.session.as_ref().is_some_and(|s| s.id != record.id)
+        })
+        .await;
+        assert!(marker.exists(), "the retry ran the front door");
+        assert_eq!(read(&cx, &model, |m| m.flow.run), RunState::Finished(InstallOutcome::Failed(1)));
+    });
+}
+
+/// A failure found on reopening that chose again is retried choosing again,
+/// whether or not the draft that launched it is still there: its record
+/// says how it treated the choices.
+#[test]
+fn a_recovered_failure_that_chose_again_is_retried_choosing_again() {
+    run_model_test(async move |mut cx| {
+        let (temp, machine, env) = fixture("model-recovered-choose-again");
+        *machine.identity.lock().unwrap() = Some(InstallIdentity::Installed("0.6.0".into()));
+        *machine.state.lock().unwrap() = Some(completed_state("0.6.0"));
+        let (package, _) = marking_package(&temp, 1);
+        let mut record = completed_session(&env, &package, false);
+        record.request.choose_again = true;
+        session::save(&env.paths.session(), &record).unwrap();
+
+        let model = model_as_started(&mut cx, env);
+        wait_for(&cx, &model, "the recovered failure", |m| matches!(m.flow.run, RunState::Finished(_))).await;
+        read(&cx, &model, |m| {
+            assert_eq!(m.flow.run, RunState::Finished(InstallOutcome::Failed(1)));
+            assert_eq!(m.update_path, UpdatePath::ChooseAgain);
+            assert!(!m.showing_recorded_install(), "a retry builds its own request");
+            assert!(m.install_request().unwrap().choose_again);
+        });
+        settle(&cx, &model).await;
+    });
+}
+
+/// Only the draft that launched the recovered install speaks for its
+/// preparation, and only as far as it goes.
+#[test]
+fn a_recovered_failure_is_not_ready_on_a_draft_that_does_not_vouch_for_it() {
+    run_model_test(async move |mut cx| {
+        for (launcher, prepared) in [(false, true), (true, false)] {
+            let (temp, _, env) = fixture("model-recovered-unprepared");
+            let (package, _) = marking_package(&temp, 1);
+            let record = completed_session(&env, &package, false);
+            save_draft(
+                &env,
+                InstallDraft {
+                    step: "install".into(),
+                    options: record.request.options.clone(),
+                    package_dir: Some(record.request.package_dir.clone()),
+                    session: Some(if launcher { record.id.clone() } else { "another-install".into() }),
+                    flow: Some("some-flow".into()),
+                    preparation_ready: prepared,
+                    ..InstallDraft::default()
+                },
+            );
+            let model = model_as_started(&mut cx, env);
+            wait_for(&cx, &model, "the recovered failure", |m| matches!(m.flow.run, RunState::Finished(_)))
+                .await;
+            wait_for(&cx, &model, "the checks and a security reading", |m| {
+                m.checks_complete() && m.security_fresh()
+            })
+            .await;
+            read(&cx, &model, |m| {
+                assert!(!m.preparation.ready(), "launcher={launcher} prepared={prepared}");
+                assert!(!m.ready_to_continue());
+                assert!(!m.can_install());
+            });
+        }
+    });
+}
+
+/// A draft whose package has since lost a file (security software
+/// quarantined a script, say) resumes without it, and opening the package
+/// again unpacks a complete copy instead of handing back the damaged one.
+#[test]
+fn a_draft_whose_package_lost_a_file_resumes_without_it() {
+    run_model_test(async move |mut cx| {
+        let (temp, _, env) = fixture("model-draft-damaged-package");
+        let (package, _) = marking_package(&temp, 0);
+        let (dir, _) = package::extract_into(&package, &env.paths.packages(), |_, _| {}).unwrap();
+        std::fs::remove_file(dir.join("Executables/VantaModules/Scripts/Initialize-VantaPowerShell.ps1"))
+            .unwrap();
+        save_draft(
+            &env,
+            InstallDraft {
+                step: "ready".into(),
+                package_dir: Some(dir.clone()),
+                flow: Some("saved-flow".into()),
+                ..InstallDraft::default()
+            },
+        );
+        let model = new_model(&mut cx, env.clone());
+        wait_for(&cx, &model, "the draft", |m| !m.recovering && m.flow.active).await;
+        read(&cx, &model, |m| {
+            assert_eq!(m.flow_id.as_deref(), Some("saved-flow"), "the draft itself is resumed");
+            assert!(m.package.is_none(), "the damaged copy is not");
+        });
+        act(&mut cx, &model, |m, cx| m.load_package_file(package.clone(), cx));
+        wait_for(&cx, &model, "the package", |m| m.package.is_some()).await;
+        read(&cx, &model, |m| {
+            let book = m.package.as_ref().unwrap();
+            assert_ne!(book.dir, dir);
+            assert!(package::intact(&book.dir));
+        });
+        settle(&cx, &model).await;
+    });
+}
+
+/// A draft holds the choices in effect, so no browser while Install a
+/// Browser is unticked. The picker's default comes back on resuming, and
+/// ticking the box later finds a browser chosen.
+#[test]
+fn a_resumed_draft_keeps_the_browser_pickers_default() {
+    run_model_test(async move |mut cx| {
+        let (_temp, _, env) = fixture("model-draft-browser-default");
+        let options = crate::services::iso::default_options(&package::Manifest::builtin());
+        assert!(!options.iter().any(|o| o.starts_with("browser-")));
+        save_draft(
+            &env,
+            InstallDraft {
+                step: "options".into(),
+                options,
+                flow: Some("earlier-window".into()),
+                ..InstallDraft::default()
+            },
+        );
+        let model = new_model(&mut cx, env);
+        wait_for(&cx, &model, "the draft", |m| !m.recovering && m.flow.active).await;
+        act(&mut cx, &model, |m, cx| {
+            assert!(m.options.contains("browser-brave"), "kept, though not in effect");
+            let page = m
+                .manifest()
+                .choices
+                .iter()
+                .position(|page| page.options.iter().any(|o| o.id == "install-another-browser"))
+                .unwrap();
+            m.choose_option(page, "install-another-browser", cx);
+        });
+        let browsers: Vec<String> = read(&cx, &model, |m| {
+            m.effective_options().into_iter().filter(|o| o.starts_with("browser-")).collect()
+        });
+        assert_eq!(browsers, ["browser-brave"]);
+        settle(&cx, &model).await;
+    });
+}

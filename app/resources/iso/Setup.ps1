@@ -1,0 +1,140 @@
+<#
+.SYNOPSIS
+    Prepares a PC installed from Vanta media: drivers during Windows Setup, then the
+    setup account at its first sign-in.
+.DESCRIPTION
+    Runs from %windir%\VantaISO, where Windows Setup copies it from the media, with
+    -File. The Setup and first sign-in runs record their steps in setup.log in that
+    folder, because Windows keeps no output from these commands.
+      No switch: Windows Setup runs it as SYSTEM in the specialize pass. It protects
+        the setup folder, applies the ISO driver policy and installs this PC's
+        network drivers.
+      -FirstLogon: FirstLogonCommands runs it as the setup account. It turns off the
+        one-time automatic sign-in, makes Windows ask for a new password, queues
+        Vanta Manager or registers the before-desktop shell, then signs out.
+      -RestoreDesktopPolicy: the desktop cleanup task runs it as SYSTEM. It removes
+        the before-desktop shell from the setup account's policy.
+.PARAMETER FirstLogon
+    Prepares the setup account at its first sign-in.
+.PARAMETER RestoreDesktopPolicy
+    Removes the before-desktop shell policy for the setup account.
+.NOTES
+    Exit codes: 0 done, 1 failed or refused, such as for the wrong identity, location
+    or setup configuration.
+#>
+[CmdletBinding()]
+param([switch]$FirstLogon, [switch]$RestoreDesktopPolicy)
+Set-StrictMode -Version 3.0
+$ErrorActionPreference = 'Stop'
+$root = Join-Path $env:WINDIR 'VantaISO'
+if ([IO.Path]::GetFullPath($PSScriptRoot) -ine [IO.Path]::GetFullPath($root)) { throw 'Unexpected setup location.' }
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+# Build-Iso writes UTF-8 without a byte order mark; Get-Content would read it as ANSI.
+$config = [IO.File]::ReadAllText((Join-Path $root 'setup.json')) | ConvertFrom-Json
+if ($config.schema -ne 2 -or $config.mode -notin @('interactive', 'configured', 'before-desktop')) { throw 'Unsupported setup configuration.' }
+$log = Join-Path $root 'setup.log'
+. (Join-Path $root 'Desktop-Policy.ps1')
+. (Join-Path $root 'RegistryFile.ps1')
+$desktopShell = Get-VantaDesktopShell $root
+if ($RestoreDesktopPolicy) {
+    if ($FirstLogon -or $identity.User.Value -ne 'S-1-5-18' -or $config.mode -ne 'before-desktop') { throw 'Desktop policy cleanup requires the setup SYSTEM task.' }
+    $sid = [IO.File]::ReadAllText((Join-Path $root 'account-ready')).Trim()
+    $account = Get-LocalUser -Name $config.username
+    if ($account.SID.Value -ne $sid) { throw 'The desktop cleanup account does not match setup.' }
+    $userHive = [Microsoft.Win32.Registry]::Users.OpenSubKey($sid)
+    if (-not $userHive) { throw 'The setup profile is not loaded. Retry cleanup after signing in.' }
+    try {
+        $key = $userHive.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Policies\System', $true)
+        try { Remove-VantaOwnedShell -Key $key -Shell $desktopShell }
+        finally { if ($key) { $key.Dispose() } }
+    } finally { $userHive.Dispose() }
+    Unregister-VantaDesktopCleanup $sid
+    exit 0
+}
+if (-not $FirstLogon) {
+    if ($identity.User.Value -ne 'S-1-5-18' -or (Get-ItemPropertyValue -LiteralPath 'HKLM:\SYSTEM\Setup' -Name SystemSetupInProgress) -ne 1) {
+        throw 'Vanta media setup can run only as SYSTEM during Windows Setup.'
+    }
+    # Protect the fixed SYSTEM task action and configuration before any user
+    # session exists. No reparse point may redirect this owned deployment tree.
+    foreach ($item in @((Get-Item -LiteralPath $root -Force)) + @(Get-ChildItem -LiteralPath $root -Force -Recurse)) {
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Unexpected link in Vanta setup files.' }
+    }
+    # Owned by SYSTEM (S-1-5-18); full control for SYSTEM and Administrators
+    # (S-1-5-32-544), read and execute for Users (S-1-5-32-545).
+    $acl = New-Object Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.SetOwner((New-Object Security.Principal.SecurityIdentifier('S-1-5-18')))
+    foreach ($sid in @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-32-545')) {
+        $rights = if ($sid -eq 'S-1-5-32-545') { 'ReadAndExecute' } else { 'FullControl' }
+        $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)), $rights, 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+    }
+    Set-Acl -LiteralPath $root -AclObject $acl
+    if (Test-Path -LiteralPath (Join-Path $root 'DriverPolicy.reg')) {
+        try { Import-VantaRegistryFile (Join-Path $root 'DriverPolicy.reg') $log }
+        catch { throw "Windows could not apply the ISO driver policy: $($_.Exception.Message)" }
+    }
+    $networkDrivers = Join-Path $root 'NetworkDrivers'
+    if (Test-Path -LiteralPath $networkDrivers) {
+        # Run in specialize, before OOBE needs a network connection. This is
+        # independent of the user's Windows Update driver policy.
+        & (Join-Path $env:WINDIR 'System32\pnputil.exe') /add-driver (Join-Path $networkDrivers '*.inf') /subdirs /install | Add-Content -LiteralPath $log -Encoding UTF8
+        $networkExit = $LASTEXITCODE
+        $installed = $networkExit -in @(0, 3010) # 3010 = success, restart required
+        [IO.File]::WriteAllText((Join-Path $root 'network-drivers-result.json'), (@{ schema=1; exitCode=$networkExit; complete=$installed } | ConvertTo-Json -Compress))
+        # A driver that does not support the selected Windows build must not
+        # abort Windows installation. Keep its files and diagnostics for recovery.
+        if (-not $installed) { 'Network drivers need attention. Driver packages remain in Windows\VantaISO\NetworkDrivers.' | Add-Content -LiteralPath $log -Encoding UTF8 }
+    }
+    'Vanta media staged. Updates will run in the destination user session.' | Add-Content -LiteralPath $log -Encoding UTF8
+    exit 0
+}
+$principal = New-Object Security.Principal.WindowsPrincipal($identity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Account initialization requires administrator access.' }
+$account = Get-LocalUser -SID $identity.User
+if ($account.Name -ine [string]$config.username) { throw 'The setup account does not match the signed-in user.' }
+# Turn off the bootstrap automatic sign-in before expiring the empty password.
+$winlogon = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+Set-ItemProperty -LiteralPath $winlogon -Name AutoAdminLogon -Value '0'
+Set-ItemProperty -LiteralPath $winlogon -Name AutoLogonCount -Value 0 -Type DWord
+Remove-ItemProperty -LiteralPath $winlogon -Name DefaultPassword -ErrorAction SilentlyContinue
+# A repeated first sign-in run must not expire the password again.
+if (Test-Path -LiteralPath (Join-Path $root 'account-ready')) { exit 0 }
+Set-LocalUser -SID $identity.User -PasswordNeverExpires $false
+& (Join-Path $env:WINDIR 'System32\net.exe') user $account.Name /logonpasswordchg:yes | Add-Content -LiteralPath $log -Encoding UTF8
+if ($LASTEXITCODE -ne 0) { throw 'Windows could not require a password change for the local account.' }
+if ($config.mode -eq 'before-desktop') {
+    # Register only after OOBE. A default-profile shell prevents Windows deployment.
+    $shellKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System'
+    # New-Item -Force recreates an existing key empty, wiping the policies in it
+    # and the Shell this check looks for, so create the key only when it's missing.
+    if (-not (Test-Path -LiteralPath $shellKey)) { New-Item -Path $shellKey -Force | Out-Null }
+    $policy = Get-Item -LiteralPath $shellKey
+    try {
+        if ($policy.GetValue('Shell')) {
+            # Windows keeps no output from first sign-in commands, so setup.log is the only record.
+            'This account already has a custom Windows shell, so Vanta left it in place and did not register its setup shell.' | Add-Content -LiteralPath $log -Encoding UTF8
+            throw 'A custom Windows shell is already configured.'
+        }
+    } finally { $policy.Dispose() }
+    Register-VantaDesktopCleanup -Sid $identity.User.Value -Root $root
+    try {
+        [IO.File]::WriteAllText((Join-Path $root 'account-ready'), $identity.User.Value)
+        Set-ItemProperty -LiteralPath $shellKey -Name Shell -Value $desktopShell
+    } catch {
+        Unregister-VantaDesktopCleanup $identity.User.Value
+        Remove-Item -LiteralPath (Join-Path $root 'account-ready') -Force -ErrorAction SilentlyContinue
+        throw
+    }
+}
+$runOnce = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
+$command = '"' + (Join-Path $root 'VantaManager.exe') + '" --setup --package "' + (Join-Path $root 'Vanta.atlaspkg') + '"'
+if ($config.mode -ne 'before-desktop') {
+    # Keep any commands already queued for this account's next sign-in.
+    if (-not (Test-Path -LiteralPath $runOnce)) { New-Item -Path $runOnce -Force | Out-Null }
+    New-ItemProperty -LiteralPath $runOnce -Name 'Vanta ISO setup' -Value $command -PropertyType String -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $root 'account-ready'), $identity.User.Value)
+}
+'Account prepared. Windows will request a new password at sign-in.' | Add-Content -LiteralPath $log -Encoding UTF8
+& (Join-Path $env:WINDIR 'System32\shutdown.exe') /l
+if ($LASTEXITCODE -ne 0) { throw 'Sign out to finish setting your Windows password.' }

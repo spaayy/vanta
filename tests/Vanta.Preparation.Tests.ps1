@@ -1,0 +1,1577 @@
+BeforeAll {
+    . (Join-Path $PSScriptRoot 'VantaTestHost.ps1')
+    . (Join-Path $PSScriptRoot '..\package\Executables\VantaModules\Scripts\Preparation\Update-Windows.ps1') -JobPath $TestDrive -FunctionsOnly
+    # No test reads this PC's component store or starts DISM.
+    $script:ComponentHealth = 'Healthy'
+    function Get-VantaTransitionImageHealth { if ($script:ComponentHealth -eq 'Throws') { throw 'DISM is unavailable' }; $script:ComponentHealth }
+    function Invoke-PreparationRestoreHealth { throw 'A test started DISM without standing in for it.' }
+}
+
+Describe 'Signed-in preparation ownership' {
+    It 'preserves the Store app and HRESULT through PowerShell exception handling' {
+        $native = [Runtime.InteropServices.COMException]::new('Resources are in use.', -2147009278)
+        try { throw (New-PreparationStoreFailure '40174MouriNaruto.NanaZip_gnj4mf6z9tkrc' 'Error' $native) }
+        catch { $detail = Get-PreparationFailureDetail $_.Exception }
+        $detail.packageName | Should -Be 'NanaZip'
+        $detail.errorCode | Should -Be '0x80073D02'
+        $detail.failureMessage | Should -Match 'Resources are in use'
+    }
+
+    It 'preserves unexpected provider failures without inventing an app name or error code' {
+        $detail = Get-PreparationFailureDetail ([Exception]::new('Update service unavailable'))
+        $detail.failureMessage | Should -Be 'Update service unavailable'
+        $detail.ContainsKey('packageName') | Should -BeFalse
+        $detail.ContainsKey('errorCode') | Should -BeFalse
+        try { throw 'Script failure' } catch { $detail = Get-PreparationFailureDetail $_.Exception }
+        $detail.failureMessage | Should -Be 'Script failure'
+        $detail.ContainsKey('errorCode') | Should -BeFalse
+    }
+
+    It 'reports the Windows code a wrapped failure carries and never a PowerShell or CLR code' {
+        try { [void][IO.File]::ReadAllText((Join-Path $TestDrive 'missing\file.txt')) } catch { $wrapped = $_.Exception }
+        (Get-PreparationFailureDetail $wrapped).errorCode | Should -Be '0x80070003'
+        $win32 = [Management.Automation.MethodInvocationException]::new('Session lookup failed', [ComponentModel.Win32Exception]::new(5))
+        (Get-PreparationFailureDetail $win32).errorCode | Should -Be '0x80070005'
+        $provider = [Runtime.InteropServices.COMException]::new('Download failed', -2145099768)
+        (Get-PreparationFailureDetail $provider).errorCode | Should -Be '0x80246008'
+        try { [void][int]'not a number' } catch { $cast = $_.Exception }
+        (Get-PreparationFailureDetail $cast).ContainsKey('errorCode') | Should -BeFalse
+    }
+
+    It 'names the causes the app words itself and keeps the worker message' {
+        try { throw (New-PreparationFailure 'Store is missing.' 'store-missing') } catch { $detail = Get-PreparationFailureDetail $_.Exception }
+        $detail.reason | Should -Be 'store-missing'
+        $detail.failureMessage | Should -Be 'Store is missing.'
+        $detail.ContainsKey('errorCode') | Should -BeFalse
+        $battery = Get-PreparationFailureDetail (New-PreparationStoreFailure 'Microsoft.WindowsStore_8wekyb3d8bbwe' 'PausedLowBattery' $null)
+        $battery.reason | Should -Be 'store-paused-battery'
+        $battery.failureMessage | Should -Be 'Microsoft Store needs attention: Microsoft.WindowsStore_8wekyb3d8bbwe, PausedLowBattery'
+        $battery.ContainsKey('errorCode') | Should -BeFalse
+        (Get-PreparationFailureDetail (New-PreparationStoreFailure 'Microsoft.WindowsStore_8wekyb3d8bbwe' 'PausedWiFiRequired' $null)).reason | Should -Be 'store-paused-network'
+        (Get-PreparationFailureDetail (New-PreparationStoreFailure 'Microsoft.WindowsStore_8wekyb3d8bbwe' 'Error' $null)).ContainsKey('reason') | Should -BeFalse
+    }
+
+    It 'rejects SYSTEM, session zero and another administrator account' {
+        Mock Get-PreparationSessionOwner { 'S-1-5-21-1-2-3-1001' }
+        { Assert-PreparationUser -UserSid 'S-1-5-18' -SessionId 1 } | Should -Throw '*session owner*'
+        { Assert-PreparationUser -UserSid 'S-1-5-21-1-2-3-1001' -SessionId 0 } | Should -Throw '*session owner*'
+        { Assert-PreparationUser -UserSid 'S-1-5-21-1-2-3-1002' -SessionId 1 } | Should -Throw '*session owner*'
+        { Assert-PreparationUser -UserSid 'S-1-5-21-1-2-3-1001' -SessionId 1 } | Should -Not -Throw
+        try { Assert-PreparationUser -UserSid 'S-1-5-18' -SessionId 1 } catch { $refusal = $_.Exception }
+        (Get-PreparationFailureDetail $refusal).reason | Should -Be 'session-owner'
+    }
+    It 'fails closed when Windows cannot identify the session owner' {
+        Mock Get-PreparationSessionOwner { throw 'WTS unavailable' }
+        { Assert-PreparationUser -UserSid 'S-1-5-21-1-2-3-1001' -SessionId 1 } | Should -Throw '*WTS unavailable*'
+    }
+}
+
+Describe 'Protected preparation recovery journals' {
+    It 'uses the same protected administrator-owned descriptor as recovery staging' {
+        $sections = [Security.AccessControl.AccessControlSections]::All
+        $stageApp = Join-Path $PSScriptRoot '..\app\resources\prepare\Stage-App.ps1'
+        $staging = & { . $stageApp -FunctionsOnly; (Get-VantaRecoveryFileSecurity).GetSecurityDescriptorSddlForm($sections) }
+        $journal = (Get-PreparationStateSecurity).GetSecurityDescriptorSddlForm($sections)
+        $journal | Should -BeExactly $staging
+        $journal | Should -BeExactly 'O:BAG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x1200a9;;;BU)' `
+            -Because 'only SYSTEM and administrators may change the journal'
+    }
+    It 'does not stop for an empty precreated cancellation marker' {
+        Set-Variable -Name PersistentCancellation -Value $true
+        $JobPath = Join-Path $TestDrive 'persistent-cancel'
+        [void][IO.Directory]::CreateDirectory($JobPath)
+        $marker = Join-Path $JobPath 'cancel'
+        [IO.File]::WriteAllText($marker, '')
+        { Assert-PreparationContinue } | Should -Not -Throw
+        [IO.File]::WriteAllText($marker, 'cancel')
+        { Assert-PreparationContinue } | Should -Throw '*stopped*'
+        [IO.File]::WriteAllText($marker, 'stop requested')
+        { Assert-PreparationContinue } | Should -Throw '*stopped*'
+        [IO.File]::Delete($marker)
+        { Assert-PreparationContinue } | Should -Throw '*marker is missing*'
+    }
+    It 'stops for any cancellation marker when the app did not precreate one' {
+        # Install-Vanta -VerifyOnly runs the worker this way.
+        Set-Variable -Name PersistentCancellation -Value $false
+        $JobPath = Join-Path $TestDrive 'one-shot-cancel'
+        [void][IO.Directory]::CreateDirectory($JobPath)
+        { Assert-PreparationContinue } | Should -Not -Throw
+        [IO.File]::WriteAllText((Join-Path $JobPath 'cancel'), '')
+        { Assert-PreparationContinue } | Should -Throw '*stopped*'
+    }
+    It 'publishes progress after a reader releases the previous report' {
+        Set-Variable -Name PersistentCancellation -Value $false
+        $JobPath = Join-Path $TestDrive 'busy-report'
+        [void][IO.Directory]::CreateDirectory($JobPath)
+        Write-PreparationState running verify
+        $path = Join-Path $JobPath 'state.json'
+        $reader = [IO.File]::Open($path, 'Open', 'Read', 'Read')
+        Mock Start-Sleep { $reader.Dispose() }
+        try { Write-PreparationState complete verify } finally { $reader.Dispose() }
+        Should -Invoke Start-Sleep -Times 1 -Exactly
+        (Get-Content -LiteralPath $path -Raw | ConvertFrom-Json).status | Should -Be 'complete'
+        Test-Path (Join-Path $JobPath 'state.tmp') | Should -BeFalse
+    }
+    It 'atomically writes recovery records and refuses an existing temporary file' {
+        Set-Variable -Name PersistentCancellation -Value $true
+        $JobPath = Join-Path $TestDrive 'persistent-state'
+        [void][IO.Directory]::CreateDirectory($JobPath)
+        # Exercise real file creation/flush/replace under a fixture-only user ACL.
+        # The exact production administrator descriptor is checked separately.
+        Mock Get-PreparationStateSecurity {
+            $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+            $security = New-Object Security.AccessControl.FileSecurity
+            $security.SetSecurityDescriptorSddlForm("O:${sid}D:P(A;;FA;;;${sid})")
+            return $security
+        }
+        Mock Get-ItemProperty { [pscustomobject]@{CurrentBuildNumber='26200'; UBR=9278} }
+        Write-PreparationState running verify
+        Write-PreparationState complete verify
+        $path = Join-Path $JobPath 'state.json'
+        $record = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        $record.status | Should -Be 'complete'
+        $record.processStart | Should -BeGreaterThan 0
+        (Get-Item -LiteralPath $path).GetAccessControl().AreAccessRulesProtected | Should -BeTrue
+        $before = (Get-FileHash -LiteralPath $path).Hash
+        $temporary = Join-Path $JobPath 'state.tmp'
+        [IO.File]::WriteAllText($temporary, 'existing file')
+        { Write-PreparationState failed verify } | Should -Throw
+        [IO.File]::ReadAllText($temporary) | Should -Be 'existing file'
+        (Get-FileHash -LiteralPath $path).Hash | Should -Be $before
+    }
+}
+
+Describe 'Preparation logs' {
+    It 'writes updates.log in UTF-8 whichever line comes first' {
+        $JobPath = Join-Path $TestDrive 'utf8-log'
+        [void][IO.Directory]::CreateDirectory($JobPath)
+        $log = Join-Path $JobPath 'updates.log'
+        # The app creates the log empty; the lines are a localized update title and
+        # error position.
+        [IO.File]::WriteAllBytes($log, [byte[]]@())
+        $title = "Kumulatives Update f$([char]0xFC)r Windows 11"
+        $position = "Au caract$([char]0xE8)re 12"
+        Write-PreparationLog $title
+        Write-PreparationLog $position
+        $bytes = [IO.File]::ReadAllBytes($log)
+        @($bytes[0..2]) | Should -Be @(0xEF, 0xBB, 0xBF)
+        [Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Length - 3) | Should -BeExactly "$title`r`n$position`r`n"
+    }
+
+    It 'keeps the older transition log under a name diagnostics collect' {
+        $script:VantaTransitionEvidencePath = Join-Path $TestDrive 'windows-transition.log'
+        try {
+            [IO.File]::WriteAllText($script:VantaTransitionEvidencePath, ('x' * 1MB) + 'an earlier step')
+            Write-VantaTransitionEvidence 'the next step'
+            [IO.File]::ReadAllText((Join-Path $TestDrive 'windows-transition.old.log')) | Should -Match 'an earlier step$'
+            [IO.File]::ReadAllText($script:VantaTransitionEvidencePath) | Should -Match '^\S+ the next step\r\n$'
+        }
+        finally { $script:VantaTransitionEvidencePath = $null }
+    }
+}
+
+Describe 'Restart markers' {
+    It 'reports <Case>' -TestCases @(
+        @{ Case = 'every registry marker it saw rather than stopping at the first'
+            Servicing = $true; Renames = @('\??\C:\old.dll', ''); Agent = $false
+            Restart = $true; Reasons = @('servicing', 'file-renames') }
+        @{ Case = 'no restart when no marker is set'
+            Servicing = $false; Renames = $null; Agent = $false
+            Restart = $false; Reasons = @() }
+        # Xbox Gaming Services queues a file rename at every boot, so restarting for one
+        # would never end.
+        @{ Case = 'deferred file replacements without requiring a restart for them'
+            Servicing = $false; Renames = @('\??\C:\old.dll', ''); Agent = $false
+            Restart = $false; Reasons = @('file-renames') }
+        @{ Case = 'the update provider''s restart alongside file replacements'
+            Servicing = $false; Renames = @('\??\C:\old.dll', ''); Agent = $true
+            Restart = $true; Reasons = @('file-renames', 'update-agent') }
+        @{ Case = 'nothing for empty rename entries'
+            Servicing = $false; Renames = @('', ' '); Agent = $false
+            Restart = $false; Reasons = @() }
+    ) {
+        $script:markerFixture = @{ Servicing = $Servicing; Renames = $Renames; Agent = $Agent }
+        Mock Test-Path { $script:markerFixture.Servicing -and $LiteralPath -like '*Component Based Servicing*' }
+        Mock Get-ItemProperty {
+            if ($null -eq $script:markerFixture.Renames) { return [pscustomobject]@{} }
+            [pscustomobject]@{ PendingFileRenameOperations = [string[]]$script:markerFixture.Renames }
+        }
+        Mock New-Object { [pscustomobject]@{ RebootRequired = $script:markerFixture.Agent } } `
+            -ParameterFilter { $ComObject -eq 'Microsoft.Update.SystemInfo' }
+
+        Test-PreparationRestart | Should -Be $Restart
+        $script:PreparationRestartReasons -join ',' | Should -BeExactly ($Reasons -join ',')
+    }
+}
+
+Describe 'Live preparation verification without installing updates' {
+    BeforeEach {
+        $script:OfferedUpdates = @()
+        $script:StoreOptions = [pscustomobject]@{ AllowForcedAppRestart=$true; AutomaticallyDownloadAndInstallUpdateIfFound=$true }
+        $script:StoreManager = [pscustomobject]@{ AppInstallItems=@() }
+        $script:StoreManager | Add-Member ScriptMethod SearchForAllUpdatesAsync {
+            param($Correlation, $Client, $Options)
+            $script:SearchArguments = @($Correlation, $Client, $Options)
+            return $null
+        }
+        $script:StoreManager | Add-Member ScriptMethod Restart { throw 'Verification must not start Store updates.' }
+        $script:StoreManager | Add-Member ScriptMethod Cancel { throw 'Verification must not cancel another queue.' }
+        Mock Assert-PreparationContinue {}
+        Mock Assert-PreparationUser {}
+        Mock Test-PreparationRestart { $false }
+        Mock Test-PreparationNetwork { $true }
+        Mock Write-PreparationState {}
+        Mock Find-PreparationWindowsUpdate { @() }
+        Mock Test-PreparationStoreRemoved { $false }
+        Mock New-PreparationStoreManager { $script:StoreManager }
+        Mock Wait-PreparationStoreSearch { $script:OfferedUpdates }
+        Mock New-Object {
+            if ($ComObject -eq 'Microsoft.Update.Session') { return [pscustomobject]@{ ClientApplicationID='' } }
+            if ($TypeName -eq 'Windows.ApplicationModel.Store.Preview.InstallControl.AppUpdateOptions') { return $script:StoreOptions }
+            throw 'Unexpected provider construction.'
+        }
+    }
+    It 'accepts completed live scans and never requests downloads or app restarts' {
+        { Assert-PreparationCurrent } | Should -Not -Throw
+        $script:StoreOptions.AllowForcedAppRestart | Should -BeFalse
+        $script:StoreOptions.AutomaticallyDownloadAndInstallUpdateIfFound | Should -BeFalse
+        Should -Invoke Find-PreparationWindowsUpdate -Times 2 -Exactly
+        Should -Invoke Wait-PreparationStoreSearch -Times 1 -Exactly
+    }
+    It 'blocks before Store if Windows offers required updates' {
+        Mock Find-PreparationWindowsUpdate { [pscustomobject]@{ Title='Required update' } }
+        { Assert-PreparationCurrent } | Should -Throw '*Windows still offers*'
+        Should -Invoke New-PreparationStoreManager -Times 0 -Exactly
+    }
+    It 'does not treat an empty new Store search as completion while its queue is active' {
+        $item = [pscustomobject]@{}
+        $item | Add-Member ScriptMethod GetCurrentStatus { [pscustomobject]@{ InstallState='Downloading' } }
+        $script:StoreManager.AppInstallItems = @($item)
+        { Assert-PreparationCurrent } | Should -Throw '*Store apps still need updates*'
+    }
+    It 'blocks paused updates returned by the Store search without resuming them' {
+        $item = [pscustomobject]@{}
+        $item | Add-Member ScriptMethod GetCurrentStatus { [pscustomobject]@{ InstallState='Paused' } }
+        $script:OfferedUpdates = @($item)
+        { Assert-PreparationCurrent } | Should -Throw '*queued updates*'
+    }
+    It 'checks nothing in a Store the user removed' {
+        Mock Test-PreparationStoreRemoved { $true }
+        { Assert-PreparationCurrent } | Should -Not -Throw
+        Should -Invoke New-PreparationStoreManager -Times 0 -Exactly
+    }
+    It 'blocks unavailable Store providers rather than trusting an earlier receipt' {
+        Mock New-PreparationStoreManager { throw 'Store unavailable' }
+        { Assert-PreparationCurrent } | Should -Throw '*Store unavailable*'
+    }
+    It 'checks user ownership and connectivity before touching providers' {
+        Mock Assert-PreparationUser { throw 'wrong account' }
+        { Assert-PreparationCurrent } | Should -Throw '*wrong account*'
+        Should -Invoke Find-PreparationWindowsUpdate -Times 0 -Exactly
+        Mock Assert-PreparationUser {}
+        Mock Test-PreparationNetwork { $false }
+        { Assert-PreparationCurrent } | Should -Throw '*unrestricted internet*'
+        Should -Invoke Find-PreparationWindowsUpdate -Times 0 -Exactly
+    }
+}
+
+Describe 'Preparation restart recovery after provider failures' {
+    BeforeEach {
+        Mock Assert-PreparationContinue {}
+        Mock Write-PreparationState {}
+        Mock Invoke-PreparationWindows { 'complete' }
+        Mock Invoke-PreparationStore {}
+        Mock Test-PreparationRestart { $false }
+        Mock Test-PreparationStoreRemoved { $false }
+        Mock Write-PreparationStoreInventory {}
+        Mock Update-PreparationStoreItself { $false }
+        Mock Invoke-PreparationStoreRepair { $false }
+        Mock Get-PreparationStoreVersion { '22608.1401.5.0' }
+        Mock Register-PreparationStore { $true }
+        $script:PreparationStoreRepairsRun = $false
+        Remove-Item -LiteralPath (Join-Path $JobPath 'updates.log') -ErrorAction SilentlyContinue
+    }
+    It 'reports a <Provider> failure as restart required when Windows has pending changes' -TestCases @(
+        @{ Provider = 'Store'; Message = 'Store deployment failed'; StoreRuns = 1 }
+        @{ Provider = 'Windows'; Message = 'Windows install failed'; StoreRuns = 0 }
+    ) {
+        $script:providerFailure = $Message
+        Mock "Invoke-Preparation$Provider" { throw $script:providerFailure }
+        Mock Test-PreparationRestart { $true }
+        Invoke-PreparationUpdates | Should -Be 'reboot'
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match $Message
+        Should -Invoke Invoke-PreparationWindows -Times 1 -Exactly
+        Should -Invoke Invoke-PreparationStore -Times $StoreRuns -Exactly
+    }
+    It 'preserves a provider failure when no restart is pending' {
+        Mock Invoke-PreparationStore { throw 'Store deployment failed' }
+        { Invoke-PreparationUpdates } | Should -Throw '*Store deployment failed*'
+    }
+    It 'preserves the original error when restart detection itself fails' {
+        Mock Invoke-PreparationWindows { throw 'Windows install failed' }
+        Mock Test-PreparationRestart { throw 'Restart detection failed' }
+        { Invoke-PreparationUpdates } | Should -Throw '*Windows install failed*'
+    }
+}
+
+Describe 'A Store the user removed' {
+    It 'reads the removed choice from the toggle record, unless the Store is back for this user' {
+        $record = { $LiteralPath -eq 'HKLM:\SOFTWARE\Vanta\Services\MicrosoftStore' -and $Name -eq 'state' }
+        Mock Get-ItemProperty { throw "read another value: $LiteralPath $Name" }
+        Mock Get-ItemProperty -ParameterFilter $record { [pscustomobject]@{ state = 0 } }
+        Mock Get-PreparationStoreVersion { '' }
+        Test-PreparationStoreRemoved | Should -BeTrue
+        Mock Get-PreparationStoreVersion { '22409.1401.5.0' }
+        Test-PreparationStoreRemoved | Should -BeFalse
+        Mock Get-ItemProperty -ParameterFilter $record { [pscustomobject]@{ state = 1 } }
+        Mock Get-PreparationStoreVersion { '' }
+        Test-PreparationStoreRemoved | Should -BeFalse
+        Mock Get-ItemProperty -ParameterFilter $record { $null }
+        Test-PreparationStoreRemoved | Should -BeFalse
+    }
+}
+
+Describe 'Microsoft Store before the Store apps' {
+    BeforeEach {
+        $script:PreparationStoreRepairsRun = $false
+        $script:PreparationStoreOutcome = $null
+        $script:Repairs = [Collections.Generic.List[string]]::new()
+        $script:Fixed = $false
+        Remove-Item -LiteralPath (Join-Path $JobPath 'updates.log') -ErrorAction SilentlyContinue
+        Mock Assert-PreparationContinue {}
+        Mock Write-PreparationState {}
+        Mock Write-PreparationStoreInventory {}
+        Mock Test-PreparationStoreRemoved { $false }
+        Mock Invoke-PreparationStoreWithRetry {}
+        Mock Update-PreparationStoreItself { $false }
+        Mock Get-PreparationStoreVersion { '22608.1401.5.0' }
+        $script:PreparationStoreDownloaded = $false
+        # No registration or repair may reach the PC running the tests.
+        Mock Register-PreparationStore { $true }
+        Mock Invoke-PreparationStoreRepair { $script:Repairs.Add($Repair); $false }
+    }
+
+    It 'skips the Store when the recorded choice removed it, and never repairs or reinstalls it' {
+        Mock Test-PreparationStoreRemoved { $true }
+        Invoke-PreparationStoreStage
+        Should -Invoke Update-PreparationStoreItself -Times 0 -Exactly
+        Should -Invoke Invoke-PreparationStoreWithRetry -Times 0 -Exactly
+        $script:Repairs.Count | Should -Be 0
+        (Get-PreparationOutcomeDetail).storeOutcome | Should -Be 'store-skipped-removed'
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'skipped'
+    }
+
+    It 'registers a Store this user has not registered before anything else, and says it repaired it' {
+        $script:Registered = $false
+        Mock Get-PreparationStoreVersion { if ($script:Registered) { '22608.1401.5.0' } else { '' } }
+        Mock Register-PreparationStore { $script:Registered = $true; $true }
+        Mock Update-PreparationStoreItself { if (-not $script:Registered) { throw 'registered too late' }; $false }
+        Invoke-PreparationStoreStage
+        Should -Invoke Register-PreparationStore -Times 1 -Exactly
+        $script:Repairs.Count | Should -Be 0
+        (Get-PreparationOutcomeDetail).storeOutcome | Should -Be 'store-repaired'
+    }
+
+    It 'leaves a registered Store registered as it is' {
+        Invoke-PreparationStoreStage
+        Should -Invoke Register-PreparationStore -Times 0 -Exactly
+    }
+
+    It 'goes on to the repairs when registering a missing Store fails' {
+        Mock Get-PreparationStoreVersion { '' }
+        Mock Register-PreparationStore { throw 'Deployment failed' }
+        Mock Update-PreparationStoreItself { throw (New-PreparationFailure 'Microsoft Store is not registered for this user.' 'store-missing') }
+        { Invoke-PreparationStoreStage } | Should -Throw
+        @($script:Repairs) | Should -Be @('wsreset', 'bootstrap', 'storefixer')
+        (Get-Content (Join-Path $JobPath 'updates.log') -Raw) | Should -Match 'registering it failed: Deployment failed'
+    }
+
+    It 'updates the Store itself before the apps and says so' {
+        Mock Update-PreparationStoreItself { $true }
+        Invoke-PreparationStoreStage
+        Should -Invoke Invoke-PreparationStoreWithRetry -Times 1 -Exactly
+        $script:Repairs.Count | Should -Be 0
+        (Get-PreparationOutcomeDetail).storeOutcome | Should -Be 'store-updated'
+    }
+
+    It 'says nothing about the Store when it was already current' {
+        Invoke-PreparationStoreStage
+        (Get-PreparationOutcomeDetail).ContainsKey('storeOutcome') | Should -BeFalse
+    }
+
+    It 'repairs in order and stops at the first repair after which the Store works' {
+        Mock Update-PreparationStoreItself { if (-not $script:Fixed) { throw (New-PreparationFailure 'Microsoft Store is not registered for this user.' 'store-missing') }; $false }
+        Mock Invoke-PreparationStoreRepair {
+            $script:Repairs.Add($Repair)
+            if ($Repair -eq 'bootstrap') { $script:Fixed = $true; $script:PreparationStoreDownloaded = $true }
+            $true
+        }
+        Invoke-PreparationStoreStage
+        @($script:Repairs) | Should -Be @('wsreset', 'bootstrap')
+        (Get-PreparationOutcomeDetail).storeOutcome | Should -Be 'store-bootstrapped'
+        # The first try, after wsreset, after the bootstrap.
+        Should -Invoke Update-PreparationStoreItself -Times 3 -Exactly
+        Should -Invoke Invoke-PreparationStoreWithRetry -Times 1 -Exactly
+        $log = Get-Content (Join-Path $JobPath 'updates.log') -Raw
+        $log | Should -Match 'still failing after wsreset'
+        $log | Should -Match 'works again after bootstrap'
+    }
+
+    It 'says repaired, not downloaded, when the bootstrap used the App Installer this PC had' {
+        Mock Update-PreparationStoreItself { if (-not $script:Fixed) { throw (New-PreparationFailure 'Microsoft Store is not registered for this user.' 'store-missing') }; $false }
+        Mock Invoke-PreparationStoreRepair { $script:Repairs.Add($Repair); if ($Repair -eq 'bootstrap') { $script:Fixed = $true }; $true }
+        Invoke-PreparationStoreStage
+        (Get-PreparationOutcomeDetail).storeOutcome | Should -Be 'store-repaired'
+    }
+
+    It 'says the Store was repaired when wsreset was what it needed' {
+        Mock Invoke-PreparationStoreWithRetry { if (-not $script:Fixed) { throw 'Microsoft Store needs attention: Microsoft.WindowsStore_8wekyb3d8bbwe, Error' } }
+        Mock Invoke-PreparationStoreRepair { $script:Repairs.Add($Repair); $script:Fixed = $true; $true }
+        Invoke-PreparationStoreStage
+        @($script:Repairs) | Should -Be @('wsreset')
+        (Get-PreparationOutcomeDetail).storeOutcome | Should -Be 'store-repaired'
+    }
+
+    It 'tries the Store again only after a repair that changed something' {
+        Mock Update-PreparationStoreItself { throw (New-PreparationFailure 'Microsoft Store is not registered for this user.' 'store-missing') }
+        Mock Invoke-PreparationStoreRepair { $script:Repairs.Add($Repair); $Repair -eq 'bootstrap' }
+        { Invoke-PreparationStoreStage } | Should -Throw
+        @($script:Repairs) | Should -Be @('wsreset', 'bootstrap', 'storefixer')
+        # The first try and the one after the bootstrap.
+        Should -Invoke Update-PreparationStoreItself -Times 2 -Exactly
+    }
+
+    It 'goes on to the next repair when one fails, and fails with its own reason after the last' {
+        Mock Update-PreparationStoreItself { throw (New-PreparationFailure 'Microsoft Store is not registered for this user.' 'store-missing') }
+        Mock Invoke-PreparationStoreRepair { $script:Repairs.Add($Repair); throw "$Repair broke" }
+        try { Invoke-PreparationStoreStage } catch { $failure = $_.Exception }
+        @($script:Repairs) | Should -Be @('wsreset', 'bootstrap', 'storefixer')
+        $detail = Get-PreparationFailureDetail $failure
+        $detail.reason | Should -Be 'store-repair-failed'
+        $detail.failureMessage | Should -Match 'not registered'
+        (Get-Content (Join-Path $JobPath 'updates.log') -Raw) | Should -Match 'storefixer failed: storefixer broke'
+    }
+
+    It 'goes through the repairs once per run' {
+        Mock Update-PreparationStoreItself { throw (New-PreparationFailure 'Microsoft Store is not registered for this user.' 'store-missing') }
+        { Invoke-PreparationStoreStage } | Should -Throw
+        $script:Repairs.Count | Should -Be 3
+        { Invoke-PreparationStoreStage } | Should -Throw '*not registered*'
+        $script:Repairs.Count | Should -Be 3
+    }
+
+    It 'leaves failures no repair helps to the user: <Case>' -TestCases @(
+        @{ Case = 'paused for battery'; Failure = { New-PreparationStoreFailure 'Microsoft.WindowsStore_8wekyb3d8bbwe' 'PausedLowBattery' $null } }
+        @{ Case = 'an app in use'; Failure = { New-PreparationStoreFailure '40174MouriNaruto.NanaZip_gnj4mf6z9tkrc' 'Error' ([Runtime.InteropServices.COMException]::new('Resources are in use.', -2147009278)) } }
+        @{ Case = 'Stop'; Failure = { New-Object OperationCanceledException 'Preparation stopped after the current operation.' } }
+    ) {
+        $script:Failure = & $Failure
+        Mock Invoke-PreparationStoreWithRetry { throw $script:Failure }
+        { Invoke-PreparationStoreStage } | Should -Throw
+        $script:Repairs.Count | Should -Be 0
+    }
+
+    It 'stops the repairs when the user chooses Stop' {
+        Mock Update-PreparationStoreItself { throw (New-PreparationFailure 'Microsoft Store is not registered for this user.' 'store-missing') }
+        Mock Invoke-PreparationStoreRepair { $script:Repairs.Add($Repair); throw (New-Object OperationCanceledException 'Preparation stopped after the current operation.') }
+        { Invoke-PreparationStoreStage } | Should -Throw -ExceptionType ([OperationCanceledException])
+        $script:Repairs.Count | Should -Be 1
+    }
+
+    It 'runs wsreset -i, never plain wsreset, and follows what it queued' {
+        $wsreset = Join-Path $TestDrive 'WSReset.exe'
+        [IO.File]::WriteAllText($wsreset, '')
+        Mock Get-PreparationWsResetPath { $wsreset }
+        Mock Invoke-PreparationStoreProcess { 0 }
+        Mock Wait-PreparationStoreQueue {}
+        Invoke-PreparationWsReset | Should -BeTrue
+        Should -Invoke Invoke-PreparationStoreProcess -Times 1 -Exactly
+        Should -Invoke Invoke-PreparationStoreProcess -Times 1 -Exactly -ParameterFilter { $FilePath -eq $wsreset -and $Arguments -eq '-i' }
+        Should -Invoke Wait-PreparationStoreQueue -Times 1 -Exactly
+        Should -Invoke Write-PreparationStoreInventory -Times 1 -Exactly -ParameterFilter { $When -eq 'after wsreset -i' }
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'wsreset -i exited 0'
+    }
+
+    Context 'App Installer for the bootstrap' {
+        BeforeAll {
+            function New-AppInstallerPackage([string]$Version, $Users = @(), [string]$Family = 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe') {
+                [pscustomobject]@{
+                    Version = $Version; PackageFamilyName = $Family; PackageUserInformation = $Users
+                    PackageFullName = "Microsoft.DesktopAppInstaller_${Version}_x64__$($Family.Substring($Family.LastIndexOf('_') + 1))"
+                }
+            }
+            function New-PackageUser([string]$Sid, [string]$Username, [string]$State) {
+                [pscustomobject]@{ UserSecurityId = [pscustomobject]@{ Sid = $Sid; Username = $Username }; InstallState = $State }
+            }
+        }
+        BeforeEach {
+            # This user's App Installer, and the newest any account has or the PC has staged.
+            $script:UserVersion = '1.27.459.0'
+            $script:StagedVersion = '1.27.459.0'
+            $script:RegisteredVersion = $null
+            $script:UsersUnreadable = $false
+            # Another publisher's package of the same name, for this user or another account.
+            $script:Foreign = @{ User = @(); AllUsers = @() }
+            Mock Get-AppxPackage {
+                if ($AllUsers) {
+                    # An entry without its account stands for one the worker's strict mode can't read.
+                    $users = if ($script:UsersUnreadable) { @([pscustomobject]@{ InstallState = 'Staged' }) }
+                    else { @((New-PackageUser 'S-1-5-18' 'S-1-5-18' 'Staged'), (New-PackageUser 'S-1-5-21-1-2-3-1002' 'DESKTOP-PC\Alice' 'Installed')) }
+                    return @((New-AppInstallerPackage '1.27.459.0' @(New-PackageUser 'S-1-5-21-1-2-3-1001' 'DESKTOP-PC\Owner' 'Installed')),
+                        (New-AppInstallerPackage $script:StagedVersion $users)) + $script:Foreign.AllUsers
+                }
+                @(if ($script:UserVersion) { New-AppInstallerPackage $script:UserVersion }) + $script:Foreign.User
+            }
+            # The provisioned bundle's version, never App Installer's own.
+            Mock Get-AppxProvisionedPackage { @([pscustomobject]@{ DisplayName = 'Microsoft.DesktopAppInstaller'; Version = '2026.115.2221.0'; PackageName = 'Microsoft.DesktopAppInstaller_2026.115.2221.0_neutral_~_8wekyb3d8bbwe' }) }
+            Mock Add-AppxPackage { if ($script:RegisteredVersion) { $script:UserVersion = $script:RegisteredVersion } }
+            Mock Get-PreparationWingetPath { 'C:\Program Files\WindowsApps\winget.exe' }
+            Mock Save-PreparationAppInstaller {}
+            Mock Assert-PreparationWingetStoreSource {}
+            Mock Invoke-PreparationStoreProcess { 0 }
+        }
+
+        It 'downloads App Installer when only the provisioned bundle''s version is higher than the user''s' {
+            Install-PreparationStoreFromMicrosoft | Should -BeTrue
+            Should -Invoke Add-AppxPackage -Times 0 -Exactly
+            Should -Invoke Save-PreparationAppInstaller -Times 1 -Exactly
+            Should -Invoke Invoke-PreparationStoreProcess -Times 1 -Exactly -ParameterFilter { $Arguments -like '*--id 9WZDNCRFJBMP --source msstore*' }
+            Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'this user has 1\.27\.459\.0, and this PC has nothing newer'
+        }
+
+        It 'downloads App Installer when registering the newer copy this PC has leaves the user''s version as it was' {
+            $script:StagedVersion = '1.28.220.0'
+            Install-PreparationStoreFromMicrosoft | Should -BeTrue
+            Should -Invoke Add-AppxPackage -Times 1 -Exactly -ParameterFilter { $RegisterByFamilyName -and $MainPackage -eq 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' }
+            Should -Invoke Save-PreparationAppInstaller -Times 1 -Exactly
+            Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'registering the copy this PC has changed nothing; this user has 1\.27\.459\.0'
+        }
+
+        It 'registers a newer App Installer staged on this PC for the user, says where it was by SID only, and downloads nothing' {
+            $script:StagedVersion = '1.28.220.0'
+            $script:RegisteredVersion = '1.28.220.0'
+            Install-PreparationStoreFromMicrosoft | Should -BeTrue
+            Should -Invoke Add-AppxPackage -Times 1 -Exactly -ParameterFilter { $RegisterByFamilyName -and $MainPackage -eq 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' }
+            Should -Invoke Save-PreparationAppInstaller -Times 0 -Exactly
+            Should -Invoke Invoke-PreparationStoreProcess -Times 1 -Exactly -ParameterFilter { $Arguments -like '*--id 9WZDNCRFJBMP --source msstore*' }
+            $script:PreparationStoreDownloaded | Should -BeFalse
+            $log = Get-Content (Join-Path $JobPath 'updates.log') -Raw
+            $log | Should -Match 'this PC has 1\.28\.220\.0, Microsoft\.DesktopAppInstaller_1\.28\.220\.0_x64__8wekyb3d8bbwe \(S-1-5-18: Staged; S-1-5-21-1-2-3-1002: Installed\); registering it'
+            $log | Should -Match 'registered the copy this PC has, 1\.27\.459\.0 -> 1\.28\.220\.0'
+            $log | Should -Not -Match 'Alice' -Because 'account names would reach reports'
+        }
+
+        It 'still registers the newer copy when its accounts can''t be read' {
+            $script:StagedVersion = '1.28.220.0'
+            $script:RegisteredVersion = '1.28.220.0'
+            $script:UsersUnreadable = $true
+            Install-PreparationStoreFromMicrosoft | Should -BeTrue
+            Should -Invoke Add-AppxPackage -Times 1 -Exactly
+            Should -Invoke Save-PreparationAppInstaller -Times 0 -Exactly
+            Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'this PC has 1\.28\.220\.0, Microsoft\.DesktopAppInstaller_1\.28\.220\.0_x64__8wekyb3d8bbwe; registering it'
+        }
+
+        It 'registers the newer copy for a user who has no App Installer, and downloads nothing' {
+            $script:UserVersion = $null
+            $script:StagedVersion = '1.28.220.0'
+            $script:RegisteredVersion = '1.28.220.0'
+            Install-PreparationStoreFromMicrosoft | Should -BeTrue
+            Should -Invoke Add-AppxPackage -Times 1 -Exactly
+            Should -Invoke Save-PreparationAppInstaller -Times 0 -Exactly
+            $log = Get-Content (Join-Path $JobPath 'updates.log') -Raw
+            $log | Should -Match 'App Installer: this user has none; this PC has 1\.28\.220\.0'
+            $log | Should -Match 'registered the copy this PC has, none -> 1\.28\.220\.0'
+        }
+
+        It 'downloads App Installer when registering leaves a user who had none still without it' {
+            $script:UserVersion = $null
+            $script:StagedVersion = '1.28.220.0'
+            Install-PreparationStoreFromMicrosoft | Should -BeTrue
+            Should -Invoke Add-AppxPackage -Times 1 -Exactly
+            Should -Invoke Save-PreparationAppInstaller -Times 1 -Exactly
+            Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'registering the copy this PC has changed nothing; this user has none'
+        }
+
+        It 'ignores a newer package of that name from another publisher that another account has' {
+            $script:Foreign.AllUsers = @(New-AppInstallerPackage '9.0.0.0' @(New-PackageUser 'S-1-5-21-1-2-3-1002' 'DESKTOP-PC\Alice' 'Installed') 'Microsoft.DesktopAppInstaller_a1b2c3d4e5f6g')
+            Install-PreparationStoreFromMicrosoft | Should -BeTrue
+            Should -Invoke Add-AppxPackage -Times 0 -Exactly
+            Should -Invoke Save-PreparationAppInstaller -Times 1 -Exactly
+            Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'this user has 1\.27\.459\.0, and this PC has nothing newer'
+        }
+
+        It 'ignores a newer package of that name from another publisher that this user has' {
+            $script:Foreign.User = @(New-AppInstallerPackage '9.0.0.0' @() 'Microsoft.DesktopAppInstaller_a1b2c3d4e5f6g')
+            $script:StagedVersion = '1.28.220.0'
+            $script:RegisteredVersion = '1.28.220.0'
+            Install-PreparationStoreFromMicrosoft | Should -BeTrue
+            Should -Invoke Add-AppxPackage -Times 1 -Exactly
+            Should -Invoke Save-PreparationAppInstaller -Times 0 -Exactly
+            Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'registered the copy this PC has, 1\.27\.459\.0 -> 1\.28\.220\.0'
+        }
+
+        It 'downloads App Installer when this PC has nothing newer than the user' {
+            $script:UserVersion = '1.28.220.0'
+            $script:StagedVersion = '1.28.220.0'
+            Install-PreparationStoreFromMicrosoft | Should -BeTrue
+            Should -Invoke Add-AppxPackage -Times 0 -Exactly
+            Should -Invoke Save-PreparationAppInstaller -Times 1 -Exactly
+        }
+    }
+
+    It 'names each Store item with its product id, versions and how it ended' {
+        $item = [pscustomobject]@{ PackageFamilyName = 'Microsoft.WindowsStore_8wekyb3d8bbwe'; ProductId = '9WZDNCRFJBMP' }
+        $item | Add-Member ScriptMethod GetCurrentStatus { [pscustomobject]@{ InstallState = 'Completed' } }
+        $new = [pscustomobject]@{ PackageFamilyName = 'Microsoft.StorePurchaseApp_8wekyb3d8bbwe'; ProductId = '' }
+        $new | Add-Member ScriptMethod GetCurrentStatus { [pscustomobject]@{ InstallState = 'Error' } }
+        Mock Get-PreparationPackageVersion { @{ 'Microsoft.WindowsStore_8wekyb3d8bbwe' = '22608.1401.5.0'; 'Microsoft.StorePurchaseApp_8wekyb3d8bbwe' = '22504.1401.5.0' } }
+        Write-PreparationStoreItem @($item, $new) @{ 'Microsoft.WindowsStore_8wekyb3d8bbwe' = '22409.1401.5.0' }
+        $log = Get-Content (Join-Path $JobPath 'updates.log') -Raw
+        $log | Should -Match 'item Microsoft\.WindowsStore_8wekyb3d8bbwe \(9WZDNCRFJBMP\): 22409\.1401\.5\.0 -> 22608\.1401\.5\.0, Completed'
+        $log | Should -Match 'item Microsoft\.StorePurchaseApp_8wekyb3d8bbwe: none -> 22504\.1401\.5\.0, Error'
+    }
+
+    It 'lets the update stage run the Store stage between the Windows passes, and returns the second pass''s result' {
+        $script:Order = [Collections.Generic.List[string]]::new()
+        Mock Write-PreparationState {}
+        Mock Invoke-PreparationWindows { $script:Order.Add('windows'); if ($script:Order.Count -eq 1) { 'complete' } else { 'reboot' } }
+        Mock Invoke-PreparationStoreStage { $script:Order.Add('store') }
+        Invoke-PreparationUpdates | Should -Be 'reboot'
+        @($script:Order) | Should -Be @('windows', 'store', 'windows')
+
+        # A restart the first pass needs comes before the Store.
+        $script:Order.Clear()
+        Mock Invoke-PreparationWindows { $script:Order.Add('windows'); 'reboot' }
+        Invoke-PreparationUpdates | Should -Be 'reboot'
+        @($script:Order) | Should -Be @('windows')
+    }
+}
+
+Describe 'Store items an earlier round left failed' {
+    BeforeEach {
+        Remove-Item -LiteralPath (Join-Path $JobPath 'updates.log') -ErrorAction SilentlyContinue
+        $script:Offered = @()
+        $failed = [pscustomobject]@{ PackageFamilyName = 'Microsoft.Xbox.TCUI_8wekyb3d8bbwe'; ProductId = '9NKNC0LD5NN6' }
+        $failed | Add-Member ScriptMethod GetCurrentStatus { [pscustomobject]@{ InstallState = 'Error'; PercentComplete = 0; ErrorCode = $null } }
+        $script:StoreManager = [pscustomobject]@{ AppInstallItems = @($failed) }
+        $script:StoreManager | Add-Member ScriptMethod Cancel {
+            param($Product)
+            $this.AppInstallItems = @($this.AppInstallItems | Where-Object ProductId -ne $Product)
+        }
+        $script:StoreManager | Add-Member ScriptMethod SearchForAllUpdatesAsync { return $null }
+        $script:StoreManager | Add-Member ScriptMethod Restart {}
+        Mock Assert-PreparationContinue {}
+        Mock Test-PreparationNetwork { $true }
+        Mock Write-PreparationState {}
+        Mock Start-Sleep {}
+        Mock New-PreparationStoreManager { $script:StoreManager }
+        Mock Wait-PreparationStoreSearch { $script:Offered }
+        Mock New-Object {
+            if ($TypeName -eq 'Windows.ApplicationModel.Store.Preview.InstallControl.AppUpdateOptions') { return [pscustomobject]@{ AllowForcedAppRestart = $false; AutomaticallyDownloadAndInstallUpdateIfFound = $false } }
+            throw 'Unexpected provider construction.'
+        }
+        Mock Get-PreparationPackageVersion { @{ 'Microsoft.Xbox.TCUI_8wekyb3d8bbwe' = '1.24.10001.0' } }
+    }
+
+    It 'counts an item the fresh search no longer offers as up to date, and says so' {
+        { Invoke-PreparationStore } | Should -Not -Throw
+        $script:StoreManager.AppInstallItems.Count | Should -Be 0 -Because 'the failed queue record is cleared first'
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw |
+            Should -Match "item Microsoft\.Xbox\.TCUI_8wekyb3d8bbwe: no longer offered after it ended Error; this user has 1\.24\.10001\.0, so it's up to date"
+    }
+
+    It 'waits for an item the Store offers again, and fails the pass when it fails again' {
+        $again = [pscustomobject]@{ PackageFamilyName = 'Microsoft.Xbox.TCUI_8wekyb3d8bbwe'; ProductId = '9NKNC0LD5NN6' }
+        $again | Add-Member ScriptMethod GetCurrentStatus { [pscustomobject]@{ InstallState = 'Error'; PercentComplete = 0; ErrorCode = $null } }
+        $script:Offered = @($again)
+        { Invoke-PreparationStore } | Should -Throw '*Microsoft.Xbox.TCUI_8wekyb3d8bbwe, Error*'
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw |
+            Should -Match 'item Microsoft\.Xbox\.TCUI_8wekyb3d8bbwe: offered again after it ended Error; updating it again'
+    }
+}
+
+Describe 'Store items Windows refused to deploy' {
+    BeforeAll {
+        function New-StoreItem([string]$Family, [string]$Product, $ErrorCode) {
+            $item = [pscustomobject]@{ PackageFamilyName = $Family; ProductId = $Product; Status = [pscustomobject]@{ InstallState = 'Error'; ErrorCode = $ErrorCode } }
+            $item | Add-Member ScriptMethod GetCurrentStatus { $this.Status }
+            return $item
+        }
+        function New-DeploymentEvent([int]$Id, [string]$Message, [int]$MinutesAgo) {
+            [pscustomobject]@{ Id = $Id; TimeCreated = [DateTime]::Now.AddMinutes(-$MinutesAgo); Message = $Message }
+        }
+        function Get-DeploymentLine { @(Get-Content (Join-Path $JobPath 'updates.log') | Where-Object { $_ -like 'Microsoft Store: deployment of *' }) }
+        # 0x80073CF9, the install failed, as the Store reports most deployment failures.
+        $script:InstallFailed = [Runtime.InteropServices.COMException]::new('Install failed. Please contact your software vendor.', -2147009287)
+        $script:Calculator = 'Microsoft.WindowsCalculator_11.2509.1.0_x64__8wekyb3d8bbwe'
+        $script:Overlay = 'Microsoft.XboxGamingOverlay_7.326.10141.0_neutral_~_8wekyb3d8bbwe'
+    }
+    BeforeEach {
+        Remove-Item -LiteralPath (Join-Path $JobPath 'updates.log') -ErrorAction SilentlyContinue
+        $script:PreparationDeploymentSeen.Clear()
+        $script:PreparationDeploymentWritten = 0
+        Mock Get-PreparationPackageVersion { @{ 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' = '11.2508.4.0' } }
+        # Newest first, as Get-WinEvent returns them; a failing Store logs the
+        # same failure again on every retry.
+        $script:Events = @(
+            (New-DeploymentEvent 404 "AppX Deployment operation failed for package $script:Calculator with error 0x80073CF9. The specific error text for this failure is: Deployment Stage operation with target volume C: on Package $script:Calculator from: (a15291e6f81eeb6b) failed with error 0x80070490." 1)
+            (New-DeploymentEvent 401 "Deployment Stage operation with target volume C: on Package $script:Calculator from: (a15291e6f81eeb6b) failed with error 0x80070490.`r`nSee http://go.microsoft.com/fwlink/?LinkId=235160 for help diagnosing app deployment issues." 2)
+            (New-DeploymentEvent 404 "AppX Deployment operation failed for package $script:Overlay with error 0x80073CF9. The specific error text for this failure is: Deployment Stage operation with target volume C: on Package $script:Overlay from: (c0ffee) failed with error 0x80070490." 3)
+            (New-DeploymentEvent 404 "AppX Deployment operation failed for package $script:Calculator with error 0x80073CF9. The specific error text for this failure is: Deployment Stage operation with target volume C: on Package $script:Calculator from: (a15291e6f81eeb6b) failed with error 0x80070490." 4)
+        )
+        Mock Get-WinEvent { $script:Events }
+    }
+
+    It 'follows the item with the deployment log''s events since the run started, under each package' {
+        $script:VantaTransitionEvidencePath = Join-Path $TestDrive 'deployment-evidence.log'
+        Remove-Item -LiteralPath $script:VantaTransitionEvidencePath -ErrorAction SilentlyContinue
+        try { Write-PreparationStoreItem @(New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' $script:InstallFailed) @{ 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' = '11.2508.4.0' } }
+        finally { $script:VantaTransitionEvidencePath = $null }
+        # The move's own log notes them and leaves the text to updates.log.
+        $evidence = Get-Content (Join-Path $TestDrive 'deployment-evidence.log') -Raw
+        $evidence | Should -Match 'store: Microsoft\.WindowsCalculator_8wekyb3d8bbwe \(0x80073CF9\) failed to deploy; the AppX deployment log since this run started has 3 new event\(s\) 401 or 404; updates\.log has them'
+        $evidence | Should -Not -Match 'says:|deployment of '
+        Should -Invoke Get-WinEvent -Times 1 -Exactly -ParameterFilter {
+            $FilterHashtable[0].LogName -eq 'Microsoft-Windows-AppXDeploymentServer/Operational' -and
+            (@($FilterHashtable[0].Id) -join ',') -eq '401,404' -and $FilterHashtable[0].StartTime -eq $script:PreparationStartedAt
+        }
+        $log = Get-Content (Join-Path $JobPath 'updates.log') -Raw
+        $log | Should -Match 'item Microsoft\.WindowsCalculator_8wekyb3d8bbwe \(9WZDNCRFHVN5\): 11\.2508\.4\.0 -> 11\.2508\.4\.0, Error, 0x80073CF9'
+        $log | Should -Match 'Microsoft\.WindowsCalculator_8wekyb3d8bbwe \(0x80073CF9\) failed to deploy; the AppX deployment log since this run started says:'
+        $lines = Get-DeploymentLine
+        # The repeated 404 is written once; each package's events oldest first.
+        $lines.Count | Should -Be 3
+        $lines[0] | Should -Match "^Microsoft Store: deployment of $([regex]::Escape($script:Calculator)), event 401 at .+: Deployment Stage operation .+ failed with error 0x80070490\. See http://go\.microsoft\.com/fwlink/\?LinkId=235160 for help diagnosing app deployment issues\.$"
+        $lines[1] | Should -Match "^Microsoft Store: deployment of $([regex]::Escape($script:Calculator)), event 404 at .+: AppX Deployment operation failed .+ with error 0x80073CF9\. .+ failed with error 0x80070490\.$"
+        $lines[2] | Should -Match "^Microsoft Store: deployment of $([regex]::Escape($script:Overlay)), event 404 "
+    }
+
+    It 'writes each event once a run' {
+        $item = New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' $script:InstallFailed
+        Write-PreparationStoreItem @($item) @{}
+        Write-PreparationStoreItem @($item) @{}
+        (Get-DeploymentLine).Count | Should -Be 3
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match "since this run started has no event 401 or 404 that updates\.log doesn't have already"
+    }
+
+    It 'keeps the newest few for each package and only so many a run' {
+        $script:Events = @(1..6 | ForEach-Object { New-DeploymentEvent 401 "Deployment Stage operation with target volume C: on Package $script:Calculator from: (attempt $_) failed with error 0x80070490." $_ })
+        Write-PreparationStoreItem @(New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' $script:InstallFailed) @{}
+        $lines = Get-DeploymentLine
+        $lines.Count | Should -Be $script:PreparationDeploymentPerPackage
+        $lines[0] | Should -Match '\(attempt 4\)'
+        $lines[-1] | Should -Match '\(attempt 1\)'
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match '2 more deployment event\(s\) left out'
+
+        Remove-Item -LiteralPath (Join-Path $JobPath 'updates.log')
+        $script:PreparationDeploymentSeen.Clear()
+        $script:PreparationDeploymentWritten = $script:PreparationDeploymentLimit - 1
+        Write-PreparationStoreItem @(New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' $script:InstallFailed) @{}
+        @(Get-DeploymentLine).Count | Should -Be 1
+        $script:PreparationDeploymentWritten | Should -Be $script:PreparationDeploymentLimit
+    }
+
+    It 'writes what a limit left out when a later item fails' {
+        $script:Events = @(1..6 | ForEach-Object { New-DeploymentEvent 401 "Deployment Stage operation with target volume C: on Package $script:Calculator from: (attempt $_) failed with error 0x80070490." $_ })
+        $item = New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' $script:InstallFailed
+        Write-PreparationStoreItem @($item) @{}
+        Write-PreparationStoreItem @($item) @{}
+        $lines = Get-DeploymentLine
+        $lines.Count | Should -Be 6
+        $lines[4] | Should -Match '\(attempt 6\)'
+        $lines[5] | Should -Match '\(attempt 5\)'
+        $script:PreparationDeploymentWritten | Should -Be 6
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Not -Match "doesn't have already"
+    }
+
+    It 'says how many the run''s limit left out once it is reached' {
+        $script:PreparationDeploymentWritten = $script:PreparationDeploymentLimit
+        Write-PreparationStoreItem @(New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' $script:InstallFailed) @{}
+        @(Get-DeploymentLine).Count | Should -Be 0
+        # The repeated 404 counts once.
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw |
+            Should -Match "since this run started has 3 more event\(s\) 401 or 404, left out: updates\.log already has the $($script:PreparationDeploymentLimit) deployment events a run takes"
+    }
+
+    It 'cuts each event''s text at a length' {
+        $long = "Deployment Stage operation with target volume C: on Package $script:Calculator from: (a15291e6f81eeb6b) failed with error 0x80070490. " + ('x' * 2000)
+        $script:Events = @(New-DeploymentEvent 401 $long 1)
+        Write-PreparationStoreItem @(New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' $script:InstallFailed) @{}
+        $written = [regex]::Match(@(Get-DeploymentLine)[0], 'event 401 at \d{4}-\d\d-\d\d \d\d:\d\d:\d\d: (.*)$')
+        $written.Success | Should -BeTrue
+        $written.Groups[1].Value | Should -BeExactly ($long.Substring(0, $script:PreparationDeploymentLength) + '...')
+    }
+
+    It 'writes an event''s own values when Windows has no text for it' {
+        $values = @('Windows cannot install package', $script:Calculator, -2147024784) | ForEach-Object { [pscustomobject]@{ Value = $_ } }
+        $script:Events = @([pscustomobject]@{ Id = 404; TimeCreated = [DateTime]::Now; Message = $null; Properties = $values })
+        Write-PreparationStoreItem @(New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' $script:InstallFailed) @{}
+        @(Get-DeploymentLine)[0] | Should -Match "deployment of $([regex]::Escape($script:Calculator)), event 404 at .+: no text; values: Windows cannot install package; $([regex]::Escape($script:Calculator)); -2147024784$"
+    }
+
+    It 'never fails the run when the log can''t be read, and says so' {
+        Mock Get-WinEvent { throw 'The RPC server is unavailable.' }
+        { Write-PreparationStoreItem @(New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' $script:InstallFailed) @{} } | Should -Not -Throw
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match "since this run started couldn't be read: The RPC server is unavailable\."
+    }
+
+    It 'says when the log has nothing since the run started' {
+        Mock Get-WinEvent {
+            throw [Management.Automation.ErrorRecord]::new([Exception]::new('No events were found that match the specified selection criteria.'),
+                'NoMatchingEventsFound,Microsoft.PowerShell.Commands.GetWinEventCommand', 'ObjectNotFound', $null)
+        }
+        Write-PreparationStoreItem @(New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' $script:InstallFailed) @{}
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match "since this run started has no event 401 or 404 that updates\.log doesn't have already"
+    }
+
+    It 'reads the log for each AppX deployment error: <Case>' -TestCases @(
+        @{ Case = 'the first, 0x80073CF0'; Code = 0x80073CF0 }
+        @{ Case = 'the last, 0x80073D53'; Code = 0x80073D53 }
+    ) {
+        Write-PreparationStoreItem @(New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' ([Runtime.InteropServices.COMException]::new('Deployment failed.', $Code))) @{}
+        Should -Invoke Get-WinEvent -Times 1 -Exactly
+    }
+
+    It 'leaves the log alone for an error that isn''t a deployment error: <Case>' -TestCases @(
+        @{ Case = 'the Store''s own'; Code = 0x803FB112 }
+        @{ Case = 'just below the range, 0x80073CEF'; Code = 0x80073CEF }
+        @{ Case = 'just above the range, 0x80073D54'; Code = 0x80073D54 }
+        @{ Case = 'no code'; Code = $null }
+    ) {
+        $errorCode = if ($null -ne $Code) { [Runtime.InteropServices.COMException]::new('The Store failed.', $Code) }
+        Write-PreparationStoreItem @(New-StoreItem 'Microsoft.WindowsCalculator_8wekyb3d8bbwe' '9WZDNCRFHVN5' $errorCode) @{}
+        Should -Invoke Get-WinEvent -Times 0 -Exactly
+    }
+}
+
+Describe 'A Store call that fails' {
+    It 'ends with the Store''s own error and code, not the task''s wrapper' {
+        Mock Write-PreparationState {}
+        # 0x803FB112: a Store that can't update itself.
+        $cause = [Runtime.InteropServices.COMException]::new('The Store needs an update it cannot install.', 0x803FB112)
+        $failure = $null
+        try { Wait-PreparationStoreTask ([Threading.Tasks.Task]::FromException($cause)) }
+        catch { $failure = $_.Exception }
+
+        $failure | Should -BeOfType ([Runtime.InteropServices.COMException])
+        $detail = Get-PreparationFailureDetail $failure
+        $detail.failureMessage | Should -BeExactly 'The Store needs an update it cannot install.'
+        $detail.errorCode | Should -BeExactly '0x803FB112'
+    }
+}
+
+Describe 'Windows installation results requiring restart' {
+    BeforeAll {
+        function New-FixtureUpdate([string]$Title, [switch]$Interactive, [int]$Impact = 0) {
+            [pscustomobject]@{
+                Title = $Title; EulaAccepted = $true; Identity = [pscustomobject]@{ UpdateID = "$Title id" }
+                InstallationBehavior = [pscustomobject]@{ CanRequestUserInput = [bool]$Interactive; Impact = $Impact }
+            }
+        }
+        # The offered update, of $Type, fails with ERROR_NO_MORE_ITEMS (0x80070103)
+        # every time, and Windows Update offers it until something records it.
+        function Set-NoMoreItemsFailure([int]$Type) {
+            $script:offered | Add-Member NoteProperty Type $Type
+            $script:record = @()
+            Mock Read-PreparationReoffered { $script:record }
+            Mock Write-PreparationReoffered { $script:record = @($Entries) }
+            Mock Find-PreparationWindowsUpdate { if (@($script:record).Count -eq 0) { $script:offered } }
+            $script:installation.RebootRequired = $false
+            $script:installation.ResultCode = 4
+            $script:installation | Add-Member ScriptMethod GetUpdateResult { [pscustomobject]@{ResultCode=4; HResult=-2147024637} } -Force
+        }
+    }
+    BeforeEach {
+        Mock Assert-PreparationContinue {}
+        Mock Test-PreparationRestart { $false }
+        Mock Test-PreparationNetwork { $true }
+        Mock Write-PreparationState {}
+        Mock Get-PreparationWindowsVersion { [pscustomobject]@{ Build = 26200; Ubr = 9168; DisplayVersion = '25H2'; EditionId = 'Professional' } }
+        Remove-Item -LiteralPath (Join-Path $JobPath 'updates.log') -ErrorAction SilentlyContinue
+        $script:offered = New-FixtureUpdate 'Fixture update'
+        $script:download = [pscustomobject]@{ResultCode=2; HResult=0}
+        Mock Invoke-PreparationWindowsOperation {
+            if ($Kind -eq 'Download') { return $script:download }
+            return $script:installation
+        }
+        Mock Find-PreparationWindowsUpdate { $script:offered }
+        # Each search fills a new collection, as WUA's UpdateColl would.
+        $script:collections = @()
+        $script:installation = [pscustomobject]@{ResultCode=3; RebootRequired=$true; HResult=0}
+        $script:installation | Add-Member ScriptMethod GetUpdateResult { param($Index); if ($Index -ne 0) { throw 'Unexpected result index' }; [pscustomobject]@{ResultCode=4; HResult=-1} }
+        $script:installer = [pscustomobject]@{Updates=$null; ForceQuiet=$false; AllowSourcePrompts=$true; RebootRequiredBeforeInstallation=$false}
+        $script:installer | Add-Member ScriptMethod Install { $script:installation }
+        $script:downloader = [pscustomobject]@{Updates=$null}
+        $script:downloader | Add-Member ScriptMethod Download { [pscustomobject]@{ResultCode=2} }
+        $script:session = [pscustomobject]@{ClientApplicationID=''}
+        $script:session | Add-Member ScriptMethod CreateUpdateInstaller { $script:installer }
+        $script:session | Add-Member ScriptMethod CreateUpdateDownloader { $script:downloader }
+        Mock New-Object {
+            if ($ComObject -eq 'Microsoft.Update.Session') { return $script:session }
+            if ($ComObject -eq 'Microsoft.Update.UpdateColl') {
+                $collection = [pscustomobject]@{ Count = 0; Queued = [Collections.ArrayList]::new() }
+                $collection | Add-Member ScriptMethod Add { param($Update); [void]$this.Queued.Add($Update); $script:queuedUpdate = $Update; $this.Count++ }
+                $collection | Add-Member ScriptMethod Item { param($Index); $this.Queued[$Index] }
+                $script:collections += $collection
+                return $collection
+            }
+            throw 'Unexpected provider'
+        }
+    }
+    It 'prioritizes restart over partial failure and keeps per-update diagnostics' {
+        Invoke-PreparationWindows | Should -Be 'reboot'
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'Fixture update: result=4, HRESULT=-1'
+    }
+    It 'installs quiet updates before asking for an interactive driver' {
+        $script:driver = New-FixtureUpdate 'Interactive driver' -Interactive
+        Mock Find-PreparationWindowsUpdate { @($script:driver, $script:offered) }
+        Invoke-PreparationWindows | Should -Be 'reboot'
+        $script:queuedUpdate.Title | Should -Be 'Fixture update'
+        $script:PreparationRestartReasons | Should -Contain 'windows-update'
+    }
+    It 'tries quiet installation before asking the user to finish an interactive update' {
+        $script:driver = New-FixtureUpdate 'Interactive driver' -Interactive
+        Mock Find-PreparationWindowsUpdate { $script:driver }
+        $script:installation.RebootRequired = $false
+        try { Invoke-PreparationWindows } catch { $thrown = $_.Exception }
+        $thrown.Message | Should -BeLike '*Windows Settings*Interactive driver*'
+        (Get-PreparationFailureDetail $thrown).reason | Should -Be 'manual-updates'
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 1 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+        $script:installer.ForceQuiet | Should -BeTrue
+        $script:installer.AllowSourcePrompts | Should -BeFalse
+    }
+    It 'accepts a quietly installed update that could have requested input' {
+        $script:driver = New-FixtureUpdate 'Interactive driver' -Interactive
+        $script:searches = 0
+        Mock Find-PreparationWindowsUpdate { $script:searches++; if ($script:searches -eq 1) { $script:driver } }
+        $script:installation.ResultCode = 2
+        $script:installation.RebootRequired = $false
+        $script:installation | Add-Member ScriptMethod GetUpdateResult { [pscustomobject]@{ResultCode=2; HResult=0} } -Force
+        Invoke-PreparationWindows | Should -Be 'complete'
+    }
+    It 'retries a failed update once after a fresh search, then reports it with its Windows code' {
+        $script:installation.RebootRequired = $false
+        $script:installation | Add-Member ScriptMethod GetUpdateResult { [pscustomobject]@{ResultCode=4; HResult=-2145124330} } -Force
+        try { Invoke-PreparationWindows } catch { $thrown = $_.Exception }
+        $thrown.Message | Should -BeLike '*could not install every update*'
+        (Get-PreparationFailureDetail $thrown).errorCode | Should -Be '0x80240016'
+        Should -Invoke Find-PreparationWindowsUpdate -Times 2 -Exactly
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 2 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'Retrying 1 failed update'
+    }
+    It 'installs a transiently failed update on the next pass' {
+        $script:installation.RebootRequired = $false
+        $script:succeeded = [pscustomobject]@{ResultCode=2; RebootRequired=$false; HResult=0}
+        $script:succeeded | Add-Member ScriptMethod GetUpdateResult { [pscustomobject]@{ResultCode=2; HResult=0} }
+        $script:installs = 0
+        Mock Invoke-PreparationWindowsOperation {
+            if ($Kind -eq 'Download') { return $script:download }
+            $script:installs++
+            if ($script:installs -eq 1) { return $script:installation }
+            return $script:succeeded
+        }
+        $script:searches = 0
+        Mock Find-PreparationWindowsUpdate { $script:searches++; if ($script:searches -le 2) { $script:offered } }
+        Invoke-PreparationWindows | Should -Be 'complete'
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 2 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+    }
+    It 'reports a failure no update accounts for at once, with the result code' {
+        $script:installation.RebootRequired = $false
+        $script:installation.ResultCode = 4
+        $script:installation.HResult = -2145124330
+        $script:installation | Add-Member ScriptMethod GetUpdateResult { [pscustomobject]@{ResultCode=2; HResult=0} } -Force
+        try { Invoke-PreparationWindows } catch { $thrown = $_.Exception }
+        $thrown.Message | Should -BeLike '*could not install every update*'
+        (Get-PreparationFailureDetail $thrown).errorCode | Should -Be '0x80240016'
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 1 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+    }
+    It 'counts a driver as done when the device already has one at least as good, and records it for the checks after' {
+        Set-NoMoreItemsFailure 2
+        Invoke-PreparationWindows | Should -Be 'complete'
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 1 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+        @($script:record.key) | Should -Be @('Fixture update id/0')
+        $log = Get-Content (Join-Path $JobPath 'updates.log') -Raw
+        $log | Should -Match "driver not needed, not installed again: 'Fixture update'"
+        $log | Should -Not -Match 'Retrying'
+    }
+    It 'still counts the driver as done when the record can''t be written' {
+        Set-NoMoreItemsFailure 2
+        Mock Write-PreparationReoffered { throw 'Access is denied' }
+        Invoke-PreparationWindows | Should -Be 'complete'
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 1 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+        $script:record | Should -BeNullOrEmpty
+        $log = Get-Content (Join-Path $JobPath 'updates.log') -Raw
+        $log | Should -Match 'The update could not be recorded: Access is denied'
+        $log | Should -Not -Match 'Retrying'
+    }
+    It 'still retries and reports a software update that fails the same way' {
+        Set-NoMoreItemsFailure 1
+        try { Invoke-PreparationWindows } catch { $thrown = $_.Exception }
+        (Get-PreparationFailureDetail $thrown).errorCode | Should -Be '0x80070103'
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 2 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+        $script:record | Should -BeNullOrEmpty
+    }
+    It 'retries a failed download once and reports the update''s Windows code' {
+        $script:download = [pscustomobject]@{ResultCode=4; HResult=0}
+        $script:download | Add-Member ScriptMethod GetUpdateResult { [pscustomobject]@{ResultCode=4; HResult=-2145099768} }
+        try { Invoke-PreparationWindows } catch { $thrown = $_.Exception }
+        $thrown.Message | Should -BeLike '*download failed*'
+        (Get-PreparationFailureDetail $thrown).errorCode | Should -Be '0x80246008'
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 2 -Exactly -ParameterFilter { $Kind -eq 'Download' }
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 0 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'Fixture update: download result=4, HRESULT=-2145099768'
+    }
+    It 'installs an exclusive update on its own' {
+        $normal = New-FixtureUpdate 'Normal update'
+        $exclusive = New-FixtureUpdate 'Exclusive update' -Impact 2
+        $script:found = @($normal, $exclusive)
+        Mock Find-PreparationWindowsUpdate { $script:found }
+        Invoke-PreparationWindows | Should -Be 'reboot'
+        @($script:collections[-1].Queued.Title) | Should -Be @('Normal update')
+        $script:found = @($exclusive, $normal)
+        Invoke-PreparationWindows | Should -Be 'reboot'
+        @($script:collections[-1].Queued.Title) | Should -Be @('Exclusive update')
+    }
+    It 'honours the installer prerequisite before invoking Install' {
+        $script:installer.RebootRequiredBeforeInstallation = $true
+        $script:installer | Add-Member ScriptMethod Install { throw 'Install must not run' } -Force
+        Invoke-PreparationWindows | Should -Be 'reboot'
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 0 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+    }
+}
+
+Describe 'A damaged component store' {
+    BeforeAll {
+        # An install whose one update ended with $HResult; 0 is success.
+        function New-InstallResult([int]$HResult) {
+            $code = if ($HResult -eq 0) { 2 } else { 4 }
+            $result = [pscustomobject]@{ ResultCode = $code; RebootRequired = $false; HResult = 0; Update = [pscustomobject]@{ ResultCode = $code; HResult = $HResult } }
+            $result | Add-Member ScriptMethod GetUpdateResult { $this.Update }
+            $result
+        }
+    }
+    BeforeEach {
+        $script:PreparationComponentChecked = $false
+        $script:PreparationComponentRepairRun = $false
+        $script:ComponentHealth = 'Healthy'
+        $script:Restart = $false
+        # What the run did, in order, and the installs still to come.
+        $script:Steps = [Collections.Generic.List[string]]::new()
+        $script:Installs = [Collections.Generic.Queue[object]]::new()
+        Remove-Item -LiteralPath (Join-Path $JobPath 'updates.log') -ErrorAction SilentlyContinue
+        Mock Assert-PreparationContinue {}
+        Mock Test-PreparationRestart { $script:Restart }
+        Mock Test-PreparationNetwork { $true }
+        Mock Write-PreparationState { if ($Stage -eq 'windows-repair') { $script:Steps.Add('repair stage') } }
+        Mock Get-VantaInstalledVantaPackage { @() }
+        Mock Invoke-PreparationRestoreHealth { $script:Steps.Add('repair'); $script:ComponentHealth = 'Healthy'; 0 }
+        Mock Find-PreparationWindowsUpdate {
+            $script:Steps.Add('search')
+            if ($script:Installs.Count -gt 0) {
+                [pscustomobject]@{
+                    Title = 'Fixture update'; EulaAccepted = $true; Identity = [pscustomobject]@{ UpdateID = 'fixture' }
+                    InstallationBehavior = [pscustomobject]@{ CanRequestUserInput = $false; Impact = 0 }
+                }
+            }
+        }
+        Mock Invoke-PreparationWindowsOperation {
+            if ($Kind -eq 'Download') { return [pscustomobject]@{ ResultCode = 2; HResult = 0 } }
+            $script:Steps.Add('install')
+            $script:Installs.Dequeue()
+        }
+        $script:RepairInstaller = [pscustomobject]@{ Updates = $null; ForceQuiet = $false; AllowSourcePrompts = $true; RebootRequiredBeforeInstallation = $false }
+        $script:RepairSession = [pscustomobject]@{ ClientApplicationID = '' }
+        $script:RepairSession | Add-Member ScriptMethod CreateUpdateInstaller { $script:RepairInstaller }
+        $script:RepairSession | Add-Member ScriptMethod CreateUpdateDownloader { [pscustomobject]@{ Updates = $null } }
+        Mock New-Object {
+            if ($ComObject -eq 'Microsoft.Update.Session') { return $script:RepairSession }
+            if ($ComObject -eq 'Microsoft.Update.UpdateColl') {
+                $collection = [pscustomobject]@{ Count = 0; Queued = [Collections.ArrayList]::new() }
+                $collection | Add-Member ScriptMethod Add { param($Update); [void]$this.Queued.Add($Update); $this.Count++ }
+                $collection | Add-Member ScriptMethod Item { param($Index); $this.Queued[$Index] }
+                return $collection
+            }
+            throw 'Unexpected provider'
+        }
+    }
+    It 'repairs damage Windows records before the first search, once a run' {
+        $script:ComponentHealth = 'Repairable'
+        Invoke-PreparationWindows | Should -Be 'complete'
+        Invoke-PreparationWindows | Should -Be 'complete'
+        @($script:Steps) | Should -Be @('repair stage', 'repair', 'search', 'search')
+        $log = Get-Content (Join-Path $JobPath 'updates.log') -Raw
+        $log | Should -Match 'Component store: Windows records damage to it; repairing it with DISM RestoreHealth'
+        $log | Should -Match 'Component store: the repair ended with 0x00000000; Windows now records it as Healthy'
+    }
+    It 'leaves a store alone that Windows records as <Health>' -TestCases @(
+        @{ Health = 'Healthy'; Logged = '^$' }
+        @{ Health = 'Throws'; Logged = 'its health could not be read \(0x[0-9A-F]{8}\): DISM is unavailable' }
+    ) {
+        param($Health, $Logged)
+        $script:ComponentHealth = $Health
+        Invoke-PreparationWindows | Should -Be 'complete'
+        Should -Invoke Invoke-PreparationRestoreHealth -Times 0 -Exactly
+        [string](Get-Content (Join-Path $JobPath 'updates.log') -Raw -ErrorAction SilentlyContinue) | Should -Match $Logged
+    }
+    It 'leaves a repairable store alone on a PC with Vanta packages, which keep it reading so' {
+        $script:ComponentHealth = 'Repairable'
+        Mock Get-VantaInstalledVantaPackage { 'Z-Vanta-NoTelemetry-Package~31bf3856ad364e35~amd64~~5.0.0.0' }
+        Invoke-PreparationWindows | Should -Be 'complete'
+        Should -Invoke Invoke-PreparationRestoreHealth -Times 0 -Exactly
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'repairable, with Vanta packages installed \(Z-Vanta-NoTelemetry-Package[^)]*\); left as it is'
+    }
+    It 'stops before any search when Windows records damage it can''t repair' {
+        $script:ComponentHealth = 'NonRepairable'
+        $thrown = $null
+        try { Invoke-PreparationWindows } catch { $thrown = $_.Exception }
+        (Get-PreparationFailureDetail $thrown).reason | Should -BeExactly 'component-store-unrepairable'
+        @($script:Steps) | Should -BeNullOrEmpty
+    }
+    It 'restarts first when the repair leaves a restart' {
+        $script:ComponentHealth = 'Repairable'
+        Mock Invoke-PreparationRestoreHealth { $script:Steps.Add('repair'); $script:Restart = $true; 0 }
+        Invoke-PreparationWindows | Should -Be 'reboot'
+        @($script:Steps) | Should -Not -Contain 'search'
+    }
+    It 'goes on to the updates when the repair can''t run' {
+        $script:ComponentHealth = 'Repairable'
+        Mock Invoke-PreparationRestoreHealth { throw 'Dism.exe is missing' }
+        Invoke-PreparationWindows | Should -Be 'complete'
+        @($script:Steps) | Should -Be @('repair stage', 'search')
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'the repair could not run: Dism\.exe is missing'
+    }
+    It 'repairs the store when an update fails on it, then tries that update again even after its retry' {
+        foreach ($code in @(-1, $script:ComponentStoreCorrupt, 0)) { $script:Installs.Enqueue((New-InstallResult $code)) }
+        Invoke-PreparationWindows | Should -Be 'complete'
+        @($script:Steps) | Should -Be @('search', 'install', 'search', 'install', 'repair stage', 'repair', 'search', 'install', 'search')
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match '1 update\(s\) failed on it \(0x80073712\); repairing it'
+    }
+    It 'reports an update that still fails on the store after the repair, with its code' {
+        foreach ($code in @($script:ComponentStoreCorrupt, $script:ComponentStoreCorrupt)) { $script:Installs.Enqueue((New-InstallResult $code)) }
+        $thrown = $null
+        try { Invoke-PreparationWindows } catch { $thrown = $_.Exception }
+        (Get-PreparationFailureDetail $thrown).errorCode | Should -BeExactly '0x80073712'
+        Should -Invoke Invoke-PreparationRestoreHealth -Times 1 -Exactly
+        @($script:Steps | Where-Object { $_ -eq 'install' }).Count | Should -Be 2
+    }
+    It 'repairs once a run, also when an update then fails on the store' {
+        $script:ComponentHealth = 'Repairable'
+        foreach ($code in @($script:ComponentStoreCorrupt, $script:ComponentStoreCorrupt)) { $script:Installs.Enqueue((New-InstallResult $code)) }
+        try { Invoke-PreparationWindows } catch { $null = $_ }
+        Should -Invoke Invoke-PreparationRestoreHealth -Times 1 -Exactly
+    }
+}
+
+Describe 'Cumulative updates a newer one in the same pass replaces' {
+    BeforeAll {
+        function New-Cumulative([string]$Title, [string]$Id, [string[]]$Superseded = $null) {
+            $update = [pscustomobject]@{ Title = $Title; Identity = [pscustomobject]@{ UpdateID = $Id; RevisionNumber = 1 } }
+            if ($null -ne $Superseded) { $update | Add-Member NoteProperty SupersededUpdateIDs $Superseded }
+            $update
+        }
+    }
+    BeforeEach {
+        Mock Get-PreparationWindowsVersion { [pscustomobject]@{ Build = 26200; Ubr = 9168; DisplayVersion = '25H2'; EditionId = 'Professional' } }
+        Remove-Item -LiteralPath (Join-Path $JobPath 'updates.log') -ErrorAction SilentlyContinue
+    }
+
+    It 'installs only the newest cumulative update for this build, with the other updates' {
+        $monthly = New-Cumulative '2026-09 Cumulative Update for Windows 11, version 25H2 (KB5124009) (26200.9457)' 'monthly'
+        $preview = New-Cumulative '2026-09 Preview Update (KB5124010) (26200.9550)' 'preview'
+        $dotnet = New-Cumulative '2026-09 Cumulative Update for .NET Framework (KB5126052)' 'dotnet'
+        @((Select-PreparationNewestUpdate @($monthly, $dotnet, $preview)).Title) | Should -Be @($dotnet.Title, $preview.Title)
+        Get-Content (Join-Path $JobPath 'updates.log') -Raw | Should -Match 'Left .*26200\.9457.* a newer update in this pass replaces it'
+    }
+
+    It 'leaves an update another one lists as superseded' {
+        $old = New-Cumulative 'Security Intelligence Update (Version 1.1)' 'old'
+        $new = New-Cumulative 'Security Intelligence Update (Version 1.2)' 'new' @('old')
+        @((Select-PreparationNewestUpdate @($old, $new)).Title) | Should -Be @($new.Title)
+        @(Select-PreparationNewestUpdate @($old)).Count | Should -Be 1
+    }
+}
+
+Describe 'Updates Windows offers again after they installed' {
+    BeforeAll {
+        function New-ReofferedUpdate([string]$Title = 'Update for Windows Security platform - KB5007651 (Version 10.0.29628.1000)') {
+            [pscustomobject]@{
+                Title = $Title; EulaAccepted = $true; KBArticleIDs = @('5007651')
+                Identity = [pscustomobject]@{ UpdateID = '0d5c1a3b-3a2b-4c6d-9e1f-2a3b4c5d6e7f'; RevisionNumber = 200 }
+                InstallationBehavior = [pscustomobject]@{ CanRequestUserInput = $false; Impact = 0 }
+            }
+        }
+        function New-InstallResult([int]$Code) {
+            $result = [pscustomobject]@{ ResultCode = $Code; RebootRequired = $false; HResult = 0 }
+            # One update per collection, so every index reports the same result.
+            $result | Add-Member ScriptMethod GetUpdateResult { param($Index) $null = $Index; [pscustomobject]@{ ResultCode = $this.ResultCode; HResult = $(if ($this.ResultCode -eq 2) { 0 } else { -2145124330 }) } }
+            return $result
+        }
+    }
+    BeforeEach {
+        Mock Assert-PreparationContinue {}
+        Mock Test-PreparationRestart { $false }
+        Mock Test-PreparationNetwork { $true }
+        Mock Write-PreparationState {}
+        Mock Read-PreparationReoffered {}
+        Mock Write-PreparationReoffered { $script:record = @($Entries) }
+        Mock Get-PreparationInstalledVersion { 'Microsoft.SecHealthUI 1000.26100.9168.0' }
+        Remove-Item -LiteralPath (Join-Path $JobPath 'updates.log') -ErrorAction SilentlyContinue
+        $script:record = @()
+        $script:results = @()
+        Mock Invoke-PreparationWindowsOperation {
+            if ($Kind -eq 'Download') { return [pscustomobject]@{ ResultCode = 2; HResult = 0 } }
+            $result = $script:results[0]
+            if ($script:results.Count -gt 1) { $script:results = $script:results[1..($script:results.Count - 1)] }
+            return $result
+        }
+        Mock Find-PreparationWindowsUpdate { New-ReofferedUpdate }
+        $script:session = [pscustomobject]@{ ClientApplicationID = '' }
+        $script:session | Add-Member ScriptMethod CreateUpdateInstaller { [pscustomobject]@{ Updates = $null; ForceQuiet = $false; AllowSourcePrompts = $true; RebootRequiredBeforeInstallation = $false } }
+        $script:session | Add-Member ScriptMethod CreateUpdateDownloader { [pscustomobject]@{ Updates = $null } }
+        Mock New-Object {
+            if ($ComObject -eq 'Microsoft.Update.Session') { return $script:session }
+            if ($ComObject -eq 'Microsoft.Update.UpdateColl') {
+                $collection = [pscustomobject]@{ Count = 0; Queued = [Collections.ArrayList]::new() }
+                $collection | Add-Member ScriptMethod Add { param($Update); [void]$this.Queued.Add($Update); $this.Count++ }
+                $collection | Add-Member ScriptMethod Item { param($Index); $this.Queued[$Index] }
+                return $collection
+            }
+            throw 'Unexpected provider'
+        }
+    }
+
+    It 'installs it once, then finishes without counting it against the passes' {
+        $script:results = @(New-InstallResult 2)
+        Invoke-PreparationWindows | Should -Be 'complete'
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 1 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+        $log = Get-Content (Join-Path $JobPath 'updates.log') -Raw
+        $log | Should -Match "reoffered-after-success, not installed again: 'Update for Windows Security platform - KB5007651 \(Version 10\.0\.29628\.1000\)' KB=5007651 offered=10\.0\.29628\.1000 installed=Microsoft\.SecHealthUI 1000\.26100\.9168\.0"
+        $script:record.Count | Should -Be 1
+        $script:record[0].key | Should -BeExactly '0d5c1a3b-3a2b-4c6d-9e1f-2a3b4c5d6e7f/200'
+    }
+
+    It 'still fails an update that fails every time (result <Code>)' -TestCases @(@{ Code = 4 }, @{ Code = 5 }) {
+        param($Code)
+        $script:results = @(New-InstallResult $Code)
+        try { Invoke-PreparationWindows } catch { $thrown = $_.Exception }
+        $thrown.Message | Should -BeLike '*could not install every update*'
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 2 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+        $script:record.Count | Should -Be 0
+    }
+
+    It 'retries an update offered again after a failed install, within the limit' {
+        $script:results = @((New-InstallResult 4), (New-InstallResult 2))
+        $script:searches = 0
+        Mock Find-PreparationWindowsUpdate { $script:searches++; if ($script:searches -le 2) { New-ReofferedUpdate } }
+        Invoke-PreparationWindows | Should -Be 'complete'
+        Should -Invoke Invoke-PreparationWindowsOperation -Times 2 -Exactly -ParameterFilter { $Kind -eq 'Install' }
+        $script:record.Count | Should -Be 0
+    }
+
+}
+
+Describe 'The install''s own check after an update was offered again' {
+    BeforeAll {
+        function New-ReofferedUpdate([string]$Title = 'Update for Windows Security platform - KB5007651 (Version 10.0.29628.1000)') {
+            [pscustomobject]@{
+                Title = $Title; KBArticleIDs = @('5007651')
+                Identity = [pscustomobject]@{ UpdateID = '0d5c1a3b-3a2b-4c6d-9e1f-2a3b4c5d6e7f'; RevisionNumber = 200 }
+            }
+        }
+    }
+
+    It 'leaves a recorded update out of the search the install''s own check runs' {
+        Mock Read-PreparationReoffered { [pscustomobject]@{ key = '0d5c1a3b-3a2b-4c6d-9e1f-2a3b4c5d6e7f/200'; at = [DateTime]::UtcNow.ToString('o') } }
+        $other = New-ReofferedUpdate 'Another update'
+        $other.Identity = [pscustomobject]@{ UpdateID = 'other'; RevisionNumber = 1 }
+        $script:searchResult = @((New-ReofferedUpdate), $other)
+        Mock Invoke-PreparationSearch { $script:searchResult }
+        Mock Get-PreparationUpdateExclusion { '' }
+        $found = @(Find-PreparationWindowsUpdate ([pscustomobject]@{}))
+        @($found.Title) | Should -Be @('Another update')
+    }
+}
+
+Describe 'Windows Update searches that end with errors' {
+    BeforeEach {
+        # Each search returns the next result; a warning names the part that failed.
+        $warning = [pscustomobject]@{ HResult = -2145107924; Context = 1; Message = 'The server could not be reached. ' }
+        $script:results = New-Object System.Collections.Queue
+        $script:session = [pscustomobject]@{}
+        $script:session | Add-Member ScriptMethod CreateUpdateSearcher {
+            $searcher = [pscustomobject]@{ Online = $false; ServerSelection = 0; ServiceID = ''; IncludePotentiallySupersededUpdates = $false }
+            $searcher | Add-Member ScriptMethod BeginSearch {
+                $job = [pscustomobject]@{ IsCompleted = $true }
+                $job | Add-Member ScriptMethod CleanUp { }
+                $job
+            }
+            $searcher | Add-Member ScriptMethod EndSearch { $script:results.Dequeue() }
+            $searcher
+        }
+        $script:partial = [pscustomobject]@{ ResultCode = 3; Updates = @(); Warnings = @($warning) }
+        Mock Get-PreparationServerSelection { 2 }
+        Mock New-PreparationCallback { [pscustomobject]@{} }
+        Mock Write-VantaTransitionEvidence { }
+        Mock Wait-PreparationSeconds { }
+        Remove-Item -LiteralPath (Join-Path $TestDrive 'updates.log') -ErrorAction SilentlyContinue
+    }
+
+    It 'searches again after a partial failure and logs what failed' {
+        $script:results.Enqueue($script:partial)
+        $script:results.Enqueue([pscustomobject]@{ ResultCode = 2; Updates = @([pscustomobject]@{ Title = 'Cumulative update' }) })
+        $found = @(Invoke-PreparationSearch $script:session 'IsInstalled=0')
+        @($found.Title) | Should -Be @('Cumulative update')
+        Should -Invoke Wait-PreparationSeconds -Times 1 -Exactly
+        Get-Content -LiteralPath (Join-Path $TestDrive 'updates.log') -Raw | Should -Match 'result 3 on attempt 1 of 3: 0x8024402C \(context 1\) The server could not be reached\.'
+    }
+
+    It 'stops with the code of the part that failed when every attempt fails' {
+        1..3 | ForEach-Object { $script:results.Enqueue($script:partial) }
+        try { Invoke-PreparationSearch $script:session 'IsInstalled=0'; throw 'expected a failure' }
+        catch { $detail = Get-PreparationFailureDetail $_.Exception }
+        $detail.errorCode | Should -Be '0x8024402C'
+        $detail.failureMessage | Should -Match '^Windows update search failed: 3 \(0x8024402C'
+        Should -Invoke Wait-PreparationSeconds -Times 2 -Exactly
+    }
+}
+
+Describe 'Provider progress without interrupting servicing' {
+    BeforeEach {
+        $script:ticks = 0
+        $script:cleaned = $false
+        $script:ended = $false
+        $script:progress = [pscustomobject]@{
+            PercentComplete=37; CurrentUpdateIndex=1
+            TotalBytesDownloaded='37000000'; TotalBytesToDownload='100000000'
+        }
+        $script:progress | Add-Member ScriptMethod GetUpdateResult {
+            param($Index)
+            if ($Index -eq 0) { return [pscustomobject]@{ResultCode=2} }
+            throw 'No result for the active update yet'
+        }
+        $script:updates = [pscustomobject]@{Count=2}
+        $script:updates | Add-Member ScriptMethod Item { param($Index); [pscustomobject]@{Title="Update $Index"} }
+        $script:job = [pscustomobject]@{}
+        $script:job | Add-Member ScriptProperty IsCompleted { $script:ticks -ge 2 }
+        $script:job | Add-Member ScriptMethod GetProgress { $script:progress }
+        $script:job | Add-Member ScriptMethod CleanUp { $script:cleaned=$true }
+        $script:provider = [pscustomobject]@{}
+        $script:provider | Add-Member ScriptMethod BeginDownload { param($Progress, $Completed, $State); if ($null -eq $Progress -or $null -eq $Completed -or $null -ne $State) { throw 'Invalid callbacks' }; $script:job }
+        $script:provider | Add-Member ScriptMethod BeginInstall { param($Progress, $Completed, $State); if ($null -eq $Progress -or $null -eq $Completed -or $null -ne $State) { throw 'Invalid callbacks' }; $script:job }
+        $script:provider | Add-Member ScriptMethod EndDownload { param($Job); if ($Job -ne $script:job) { throw 'Wrong job' }; $script:ended=$true; [pscustomobject]@{ResultCode=3} }
+        $script:provider | Add-Member ScriptMethod EndInstall { param($Job); if ($Job -ne $script:job) { throw 'Wrong job' }; $script:ended=$true; [pscustomobject]@{ResultCode=3; RebootRequired=$true} }
+        Mock New-PreparationCallback { [pscustomobject]@{} }
+        Mock Start-Sleep { $script:ticks++ }
+        Mock Write-PreparationState {}
+        Mock Assert-PreparationContinue { throw 'Do not abandon an active provider job for a stop request' }
+    }
+    It 'reports bytes, the update title and provider percentage without equating the index with success' {
+        Write-PreparationWindowsProgress $script:job $script:updates windows-download
+        Should -Invoke Write-PreparationState -Times 1 -Exactly -ParameterFilter {
+            $Stage -eq 'windows-download' -and $Completed -eq 1 -and $Total -eq 2 -and
+            $Detail.percent -eq 37 -and $Detail.currentUpdate -eq 'Update 1' -and
+            $Detail.bytesDownloaded -eq 37000000 -and $Detail.bytesTotal -eq 100000000
+        }
+    }
+    It 'keeps unknown progress indeterminate when telemetry is unavailable' {
+        $script:job | Add-Member ScriptMethod GetProgress { throw 'temporarily unavailable' } -Force
+        Write-PreparationWindowsProgress $script:job $script:updates windows-install
+        Should -Invoke Write-PreparationState -Times 1 -Exactly -ParameterFilter { $Detail.Count -eq 0 -and $Completed -eq 0 }
+    }
+    It 'waits for <Kind>, keeps the provider result and cleans up the completed job' -TestCases @(
+        @{Kind='Download'}, @{Kind='Install'}
+    ) {
+        param($Kind)
+        $result = Invoke-PreparationWindowsOperation $script:provider $script:updates $Kind
+        $script:ticks | Should -Be 2
+        $script:ended | Should -BeTrue
+        $script:cleaned | Should -BeTrue
+        $result.ResultCode | Should -Be 3
+        if ($Kind -eq 'Install') { $result.RebootRequired | Should -BeTrue }
+        Should -Invoke Write-PreparationState -Times 2 -Exactly
+        Should -Invoke Assert-PreparationContinue -Times 0 -Exactly
+    }
+    It 'does not abandon an active installation when the progress journal cannot be written' {
+        Mock Write-PreparationState { throw 'disk write failed' }
+        { Invoke-PreparationWindowsOperation $script:provider $script:updates Install } | Should -Throw '*disk write failed*'
+        $script:ticks | Should -Be 2
+        $script:ended | Should -BeTrue
+        $script:cleaned | Should -BeTrue
+    }
+}
+
+Describe 'Progress freshness' {
+    It 'distinguishes unchanged provider progress from a fresh heartbeat' {
+        $JobPath = Join-Path $TestDrive 'heartbeat'
+        [void][IO.Directory]::CreateDirectory($JobPath)
+        $savedClock = $script:PreparationClock
+        try {
+            $script:PreparationClock = [pscustomobject]@{Elapsed=[TimeSpan]::FromSeconds(5)}
+            Write-PreparationState running windows-download -Detail @{percent=20}
+            $script:PreparationClock.Elapsed = [TimeSpan]::FromSeconds(70)
+            Write-PreparationState running windows-download -Detail @{percent=20}
+            $record = Get-Content (Join-Path $JobPath 'state.json') -Raw | ConvertFrom-Json
+            $record.activity.elapsedSeconds | Should -Be 70
+            $record.activity.unchangedSeconds | Should -Be 65
+            Write-PreparationState running windows-download -Detail @{percent=21; restartReasons=@('servicing', 'file-renames')}
+            $record = Get-Content (Join-Path $JobPath 'state.json') -Raw | ConvertFrom-Json
+            $record.activity.unchangedSeconds | Should -Be 0
+            @($record.activity.restartReasons) | Should -Be @('servicing', 'file-renames')
+        } finally { $script:PreparationClock = $savedClock }
+    }
+}
+
+Describe 'Windows preparation prerequisites' {
+    It 'accepts internet access and rejects metered or roaming profiles regardless of adapter type' {
+        $script:networkCost = [pscustomobject]@{ NetworkCostType='Unrestricted'; Roaming=$false; OverDataLimit=$false; BackgroundDataUsageRestricted=$false }
+        $script:networkLevel = 'InternetAccess'
+        $script:networkProfile = [pscustomobject]@{}
+        $script:networkProfile | Add-Member ScriptMethod GetNetworkConnectivityLevel { $script:networkLevel }
+        $script:networkProfile | Add-Member ScriptMethod GetConnectionCost { $script:networkCost }
+        Mock Get-PreparationNetworkProfile { $script:networkProfile }
+        Test-PreparationNetwork | Should -BeTrue
+        $script:PreparationNetworkReason | Should -BeNullOrEmpty
+        foreach ($kind in @('Fixed','Variable','Unknown')) {
+            $script:networkCost.NetworkCostType = $kind
+            Test-PreparationNetwork | Should -BeFalse
+            $script:PreparationNetworkReason | Should -Be 'metered'
+        }
+        $script:networkCost.NetworkCostType = 'Unrestricted'
+        $script:networkCost.OverDataLimit = $true
+        Test-PreparationNetwork | Should -BeFalse
+        $script:PreparationNetworkReason | Should -Be 'metered'
+        $script:networkCost.OverDataLimit = $false
+        $script:networkCost.Roaming = $true
+        Test-PreparationNetwork | Should -BeFalse
+        $script:PreparationNetworkReason | Should -Be 'roaming'
+        $script:networkCost.Roaming = $false
+        foreach ($level in @('ConstrainedInternetAccess', 'LocalAccess')) {
+            $script:networkLevel = $level
+            Test-PreparationNetwork | Should -BeFalse
+            $script:PreparationNetworkReason | Should -Be 'limited'
+        }
+        $script:networkLevel = 'None'
+        Test-PreparationNetwork | Should -BeFalse
+        $script:PreparationNetworkReason | Should -Be 'offline'
+        Mock Get-PreparationNetworkProfile { $null }
+        Test-PreparationNetwork | Should -BeFalse
+        $script:PreparationNetworkReason | Should -Be 'offline'
+    }
+    It 'includes recommended updates but excludes optional previews and feature upgrades' {
+        Get-PreparationUpdateExclusion ([pscustomobject]@{ BrowseOnly = $false; Categories = @() }) | Should -BeExactly ''
+        Get-PreparationUpdateExclusion ([pscustomobject]@{ BrowseOnly = $true; Categories = @() }) | Should -Match 'optional preview'
+        Get-PreparationUpdateExclusion ([pscustomobject]@{ BrowseOnly = $false; Categories = @([pscustomobject]@{ CategoryID = '3689bdc8-b205-4af4-8d4a-a63924c5e9d5' }) }) | Should -Match 'feature update'
+    }
+    It 'excludes drivers in manual mode while retaining Windows software updates' {
+        $previousMode = $DriverMode
+        try {
+            $DriverMode = 'manual'
+            Get-PreparationUpdateExclusion ([pscustomobject]@{ BrowseOnly = $false; Type = 2; Categories = @() }) | Should -Match 'Install drivers myself'
+            Get-PreparationUpdateExclusion ([pscustomobject]@{ BrowseOnly = $false; Type = 1; Categories = @() }) | Should -BeExactly ''
+        } finally { $DriverMode = $previousMode }
+    }
+    It 'logs each offer it leaves out of a pass, and why' {
+        Mock Read-PreparationReoffered {}
+        Remove-Item -LiteralPath (Join-Path $JobPath 'updates.log') -ErrorAction SilentlyContinue
+        $script:searchResult = @(
+            [pscustomobject]@{ Title = '2026-10 Cumulative Update Preview for Windows 11 (KB5124011)'; BrowseOnly = $true; Type = 1; Categories = @() }
+            [pscustomobject]@{ Title = 'Windows 11, version 26H2'; BrowseOnly = $false; Type = 1; Categories = @([pscustomobject]@{ CategoryID = '3689BDC8-B205-4AF4-8D4A-A63924C5E9D5' }) }
+            [pscustomobject]@{ Title = 'Intel Corporation - Display - 32.0.101.6881'; BrowseOnly = $false; Type = 2; Categories = @() }
+            [pscustomobject]@{ Title = '2026-10 Cumulative Update for Windows 11 (KB5124010)'; BrowseOnly = $false; Type = 1; Categories = @(); Identity = [pscustomobject]@{ UpdateID = 'cumulative'; RevisionNumber = 1 } }
+        )
+        Mock Invoke-PreparationSearch { $script:searchResult }
+        $previousMode = $DriverMode
+        try {
+            $DriverMode = 'manual'
+            $found = @(Find-PreparationWindowsUpdate ([pscustomobject]@{}))
+        } finally { $DriverMode = $previousMode }
+        @($found.Title) | Should -Be @('2026-10 Cumulative Update for Windows 11 (KB5124010)')
+        $log = Get-Content (Join-Path $JobPath 'updates.log') -Raw
+        $log | Should -Match "Left '2026-10 Cumulative Update Preview for Windows 11 \(KB5124011\)': an optional preview \(browse-only\), which installing Vanta doesn't need\."
+        $log | Should -Match "Left 'Windows 11, version 26H2': a feature update, which only a move to another Windows release installs, through its own search\."
+        $log | Should -Match "Left 'Intel Corporation - Display - 32\.0\.101\.6881': a driver, and drivers are left to the user \(Install drivers myself\)\."
+        $log | Should -Not -Match 'Left ''2026-10 Cumulative Update for Windows 11'
+    }
+    It 'does not search Windows Update when the network is unavailable or restricted' {
+        Mock Test-PreparationRestart { $false }
+        Mock Test-PreparationNetwork { $false }
+        Mock Write-PreparationState { throw 'The network gate must run before a search.' }
+        { Invoke-PreparationWindows } | Should -Throw
+        Should -Invoke Test-PreparationNetwork -Times 1 -Exactly
+        Should -Invoke Write-PreparationState -Times 0 -Exactly
+    }
+    It 'reports a pending restart without searching or installing updates' {
+        Mock Test-PreparationRestart { $true }
+        Mock Write-PreparationState { throw 'No search should start while a restart is pending.' }
+        Invoke-PreparationWindows | Should -Be 'reboot'
+    }
+    It 'does not mark missing Store registration as up to date' {
+        Mock Get-AppxPackage { $null }
+        { New-PreparationStoreManager } | Should -Throw '*not registered*'
+    }
+}
+
+Describe 'Transient Store deployment recovery' {
+    BeforeEach {
+        Mock Assert-PreparationContinue {}
+        Mock Write-PreparationState {}
+        Mock Start-Sleep {}
+        Mock Test-PreparationRestart { $false }
+        $script:storeAttempts = 0
+        Mock Invoke-PreparationStore {
+            $script:storeAttempts++
+            if ($script:storeAttempts -le 2) {
+                throw (New-PreparationStoreFailure 'Microsoft.Xbox.TCUI_8wekyb3d8bbwe' 'Error' ([Runtime.InteropServices.COMException]::new('Deployment busy', -2145124330)))
+            }
+        }
+    }
+    It 'recovers a busy Store without returning an error to the caller' {
+        { Invoke-PreparationStoreWithRetry } | Should -Not -Throw
+        Should -Invoke Invoke-PreparationStore -Times 3 -Exactly
+        Should -Invoke Start-Sleep -Times 30 -Exactly
+    }
+    It 'stops retrying a persistent conflict after four attempts' {
+        Mock Invoke-PreparationStore { throw (New-PreparationStoreFailure 'Microsoft.Xbox.TCUI_8wekyb3d8bbwe' 'Error' ([Runtime.InteropServices.COMException]::new('Deployment busy', -2145124330))) }
+        { Invoke-PreparationStoreWithRetry } | Should -Throw '*Deployment busy*'
+        Should -Invoke Invoke-PreparationStore -Times 4 -Exactly
+    }
+    It 'does not delay a required restart' {
+        Mock Test-PreparationRestart { $true }
+        { Invoke-PreparationStoreWithRetry } | Should -Throw '*Deployment busy*'
+        Should -Invoke Invoke-PreparationStore -Times 1 -Exactly
+        Should -Invoke Start-Sleep -Times 0 -Exactly
+    }
+    It 'preserves unknown errors without repeatedly invoking the provider' {
+        Mock Invoke-PreparationStore { throw 'Unknown provider failure' }
+        { Invoke-PreparationStoreWithRetry } | Should -Throw '*Unknown provider failure*'
+        Should -Invoke Invoke-PreparationStore -Times 1 -Exactly
+    }
+    It 'honours cancellation during the retry delay' {
+        Mock Assert-PreparationContinue { throw [OperationCanceledException]::new('Stopped') }
+        { Invoke-PreparationStoreWithRetry } | Should -Throw '*Stopped*'
+        Should -Invoke Invoke-PreparationStore -Times 1 -Exactly
+    }
+}
+
+Describe 'How Windows moved, once the record says' {
+    BeforeEach {
+        Mock Write-PreparationJournal {}
+        # The Vanta install's Defender choice uninstalled the package the record lists.
+        Mock Get-VantaInstalledVantaPackage { @() }
+        $script:RebuildFacts = [pscustomobject]@{ WindowsOld = $false; SetupFolder = $false; PantherWritten = $false; VantaModules = $true }
+        Mock Get-VantaTransitionRebuildFact { $script:RebuildFacts }
+        $script:Journal = [pscustomobject]@{
+            createdAt = '2026-10-01T00:00:00Z'
+            vantaPackages = @('Z-Vanta-NoDefender-Package~31bf3856ad364e35~amd64~~5.0.0.0')
+            rebuild = [pscustomobject]@{ rebuilt = $false; signals = @(); checkedAt = '2026-10-02T00:00:00Z' }
+        }
+    }
+
+    It 'stops again on the components it found gone without a sign of Setup' {
+        $script:Journal.rebuild.signals = @('windows-old', 'packages-missing')
+        try { Test-PreparationRebuild $script:Journal } catch { $thrown = $_.Exception }
+        $thrown.Data['reason'] | Should -BeExactly 'feature-components-lost'
+        Get-VantaTransitionRebuildDecision $script:Journal | Should -BeExactly 'components-lost'
+        Should -Invoke Write-PreparationJournal -Times 0 -Exactly
+    }
+}

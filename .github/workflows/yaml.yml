@@ -1,0 +1,56 @@
+name: Lint YAML
+
+# Actions are pinned by SHA; Dependabot updates the SHA and its version comment together.
+
+on:
+  push:
+    paths:
+      - "**.yml"
+      - "**.yaml"
+      - ".github/requirements-ci.txt"
+  pull_request:
+    paths:
+      - "**.yml"
+      - "**.yaml"
+      - ".github/requirements-ci.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  yamllint:
+    name: yamllint
+    # The lock file's PyYAML wheel is the Windows x64 CPython 3.13 build.
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pinned Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install hash-locked Python dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check --no-input `
+              --only-binary=:all: --require-hashes -r .github/requirements-ci.txt
+          if ($LASTEXITCODE -ne 0) {
+              throw 'Installing the hash-locked CI dependencies failed.'
+          }
+
+      - name: Validate YAML files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m yamllint -c .yamllint.yml .
+          if ($LASTEXITCODE -ne 0) {
+              throw 'YAML validation failed.'
+          }

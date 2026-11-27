@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest a feature or change for Vanta or Vanta Manager.
+
+labels:
+- enhancement
+
+body:
+- type: checkboxes
+  attributes:
+    label: Before you continue
+    description: Make sure you meet these criteria. If you don't, the maintainers may close and lock your issue.
+    options:
+    - label: "I agree to follow Vanta's Code of Conduct"
+      required: true
+    - label: "I have searched the issue tracker and this request hasn't been made already"
+      required: true
+    - label: "I have searched the Vanta documentation for a solution"
+      required: true
+
+- type: dropdown
+  attributes:
+    label: What is the request about?
+    options:
+    - Vanta
+    - Vanta Manager
+    - Something else (tell the maintainer instead)
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: What problem would it solve?
+    placeholder: For example, I always wanted Vanta to…
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Describe the solution you'd like
+    placeholder: For example, I'd like Vanta to add…
+  validations:
+    required: true
+
+- type: textarea
+  attributes:
+    label: Alternatives you've considered
+    description: Other solutions you've thought of, or a workaround you use for now.
+
+- type: textarea
+  attributes:
+    label: Additional context
+    description: Add any other context or screenshots about the request.

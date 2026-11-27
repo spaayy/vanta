@@ -1,0 +1,157 @@
+BeforeAll {
+    . (Join-Path $PSScriptRoot 'VantaTestHost.ps1')
+    $script:ModulesRoot = Join-Path -Path $PSScriptRoot `
+        -ChildPath '..\package\Executables\VantaModules\Scripts\Modules'
+    Import-Module -Name (Join-Path -Path $script:ModulesRoot `
+            -ChildPath 'Vanta.Core\Vanta.Core.psd1') -Force
+    $script:CoreModule = Get-Module -Name Vanta.Core
+    $script:WindowsPath = [Environment]::GetFolderPath('Windows')
+    $script:PowerShellPath = [IO.Path]::Combine(
+        $script:WindowsPath,
+        'System32',
+        'WindowsPowerShell',
+        'v1.0',
+        'powershell.exe'
+    )
+
+    & $script:CoreModule { Initialize-VantaNativeType }
+
+    function New-TestUserContext {
+        param(
+            [string]$Sid = 'S-1-5-21-111-222-333-1001',
+            [object]$SessionId = 7
+        )
+
+        [pscustomobject]@{
+            WinDir                      = $script:WindowsPath
+            InteractiveUserSid          = $Sid
+            InteractiveUserSessionId    = $SessionId
+        }
+    }
+
+    function Invoke-TestUserProcess {
+        param(
+            $Context = (New-TestUserContext),
+            [int]$ExitCode = 0,
+            [Collections.Generic.List[object]]$Calls =
+                (New-Object Collections.Generic.List[object]),
+            [string]$FilePath = $script:PowerShellPath,
+            [string]$Arguments = '-NoLogo -File "C:\Vanta Files\setup.ps1" "one two"'
+        )
+
+        & $script:CoreModule {
+            param($Context, $ExitCode, $Calls, $FilePath, $Arguments)
+            $testContext = $Context
+            $testExitCode = $ExitCode
+            $testCalls = $Calls
+            $contextReader = { $testContext }.GetNewClosure()
+            $launcher = {
+                param($ApplicationPath, $CommandLine, $WorkingDirectory,
+                    $TimeoutMilliseconds, $UserSid, $UserSessionId)
+                $testCalls.Add([pscustomobject]@{
+                        ApplicationPath     = $ApplicationPath
+                        CommandLine         = $CommandLine
+                        WorkingDirectory    = $WorkingDirectory
+                        TimeoutMilliseconds = $TimeoutMilliseconds
+                        UserSid             = $UserSid
+                        UserSessionId       = $UserSessionId
+                    })
+                return $testExitCode
+            }.GetNewClosure()
+
+            Invoke-VantaBoundUserProcess -FilePath $FilePath -Arguments $Arguments `
+                -ContextReader $contextReader -ProcessLauncher $launcher
+        } $Context $ExitCode $Calls $FilePath $Arguments
+    }
+}
+
+Describe 'Vanta installing-user process boundary' {
+    It 'passes the captured SID and session to one exact System32 PowerShell launch' {
+        $calls = New-Object Collections.Generic.List[object]
+
+        $result = Invoke-TestUserProcess -Calls $calls -ExitCode 37
+
+        $result | Should -Be 37
+        $calls.Count | Should -Be 1
+        $calls[0].ApplicationPath | Should -BeExactly $script:PowerShellPath
+        $calls[0].UserSid | Should -BeExactly 'S-1-5-21-111-222-333-1001'
+        $calls[0].UserSessionId | Should -Be 7
+        $calls[0].TimeoutMilliseconds | Should -Be 900000
+    }
+
+    It 'preserves the serialised child arguments in the Windows command line' {
+        $calls = New-Object Collections.Generic.List[object]
+        $arguments = '-NoLogo -File "C:\Vanta Files\setup.ps1" "one two"'
+
+        Invoke-TestUserProcess -Calls $calls -Arguments $arguments | Out-Null
+
+        $calls[0].CommandLine | Should -BeExactly `
+            ('"{0}" {1}' -f $script:PowerShellPath, $arguments)
+    }
+
+
+    It 'rejects missing or invalid captured identity before launch' -TestCases @(
+        @{ Sid = 'S-1-5-18'; Session = 7; Message = '*interactive account SID*' }
+        @{ Sid = 'S-1-5-21-111-222-333-1001'; Session = 0; Message = '*invalid interactive user session ID*' }
+        @{ Sid = 'S-1-5-21-111-222-333-1001'; Session = '7'; Message = '*integer interactive user session ID*' }
+        # An identity that was never captured arrives as a blank SID or a null session.
+        # Neither may fall back to another account or session.
+        @{ Sid = ''; Session = 7; Message = '*valid interactive user SID*' }
+        @{ Sid = 'S-1-5-21-111-222-333-1001'; Session = $null; Message = '*integer interactive user session ID*' }
+    ) {
+        param($Sid, $Session, $Message)
+        $calls = New-Object Collections.Generic.List[object]
+        $context = New-TestUserContext -Sid $Sid -SessionId $Session
+
+        { Invoke-TestUserProcess -Context $context -Calls $calls } | Should -Throw -ExpectedMessage $Message
+        $calls.Count | Should -Be 0
+    }
+
+    It 'rejects any executable other than inbox System32 Windows PowerShell' {
+        $calls = New-Object Collections.Generic.List[object]
+
+        {
+            Invoke-TestUserProcess -Calls $calls `
+                -FilePath (Join-Path -Path $script:WindowsPath -ChildPath 'explorer.exe')
+        } | Should -Throw -ExpectedMessage '*inbox Windows PowerShell*'
+        $calls.Count | Should -Be 0
+    }
+
+    It 'accepts matching token evidence and rejects SID or session changes' {
+        {
+            [Vanta.Native.UserProcess]::ValidateIdentity(
+                'S-1-5-21-111-222-333-1001', 7,
+                'S-1-5-21-111-222-333-1001', 7, 1)
+        } | Should -Not -Throw
+
+        {
+            [Vanta.Native.UserProcess]::ValidateIdentity(
+                'S-1-5-21-111-222-333-1001', 7,
+                'S-1-5-21-111-222-333-1002', 7, 1)
+        } | Should -Throw
+
+        {
+            [Vanta.Native.UserProcess]::ValidateIdentity(
+                'S-1-5-21-111-222-333-1001', 7,
+                'S-1-5-21-111-222-333-1001', 8, 1)
+        } | Should -Throw
+    }
+
+    It 'accepts only limited or unlinked medium non-admin user tokens' {
+        { [Vanta.Native.UserProcess]::ValidateMediumIdentity(3, 0x2000, $false) } |
+            Should -Not -Throw
+        { [Vanta.Native.UserProcess]::ValidateMediumIdentity(1, 0x2100, $false) } |
+            Should -Not -Throw
+
+        { [Vanta.Native.UserProcess]::ValidateMediumIdentity(2, 0x3000, $true) } |
+            Should -Throw -ExpectedMessage '*elevated*'
+        { [Vanta.Native.UserProcess]::ValidateMediumIdentity(3, 0x1000, $false) } |
+            Should -Throw -ExpectedMessage '*medium integrity*'
+        # Disabling UAC (or enabling it without a restart) leaves an admin with
+        # an unlinked high-integrity token. Refuse it and give recovery steps.
+        { [Vanta.Native.UserProcess]::ValidateMediumIdentity(1, 0x3000, $true) } |
+            Should -Throw -ExpectedMessage '*Enable User Account Control (UAC), restart Windows*'
+        { [Vanta.Native.UserProcess]::ValidateMediumIdentity(3, 0x2000, $true) } |
+            Should -Throw -ExpectedMessage '*Administrators role*'
+    }
+}

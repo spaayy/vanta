@@ -1,0 +1,50 @@
+[
+  {
+    "name": "Newtonsoft.Json",
+    "version": "13.0.3",
+    "license": "MIT",
+    "source": "Newtonsoft.Json.dll inside ViVeTool-v0.3.3.zip (x64 and ARM64CLR); licence from https://github.com/JamesNK/Newtonsoft.Json/blob/0a2e291c0d9c0c7675d445703e51750363a549ef/LICENSE.md (tag 13.0.3)",
+    "file": "supplemental/components/Newtonsoft.Json-13.0.3-LICENSE.md",
+    "sha256": "D7F83BBEA3264A8E23D7739E44D9DB1A4994B357274DF6F00876EB2E623827AD"
+  },
+  {
+    "name": "github.com/lxn/walk",
+    "version": "v0.0.0-20210112085537-c389da54e794",
+    "license": "BSD-3-Clause",
+    "source": "Go module linked into multichoice.exe; source in Vanta-0.6.0-third-party-sources.zip (vendor/)",
+    "file": "supplemental/components/go-lxn-walk-LICENSE.txt",
+    "sha256": "E5EB49344B2714FDC0F2536A7FF682C3EE2D38BFAC020201052817069E1FFFA3"
+  },
+  {
+    "name": "github.com/lxn/win",
+    "version": "v0.0.0-20210218163916-a377121e959e",
+    "license": "BSD-3-Clause",
+    "source": "Go module linked into multichoice.exe; source in Vanta-0.6.0-third-party-sources.zip (vendor/)",
+    "file": "supplemental/components/go-lxn-win-LICENSE.txt",
+    "sha256": "477325A745AE8D13ECC36399645C702A16062E8E05952A2286B46E74FF51D0A8"
+  },
+  {
+    "name": "golang.org/x/sys",
+    "version": "v0.0.0-20211117180635-dee7805ff2e1",
+    "license": "BSD-3-Clause",
+    "source": "Go module linked into multichoice.exe; source in Vanta-0.6.0-third-party-sources.zip (vendor/)",
+    "file": "supplemental/components/go-x-sys-LICENSE.txt",
+    "sha256": "2D36597F7117C38B006835AE7F537487207D8EC407AA9D9980794B2030CBC067"
+  },
+  {
+    "name": "gopkg.in/Knetic/govaluate.v3",
+    "version": "v3.0.0",
+    "license": "MIT",
+    "source": "Go module linked into multichoice.exe; source in Vanta-0.6.0-third-party-sources.zip (vendor/)",
+    "file": "supplemental/components/go-govaluate-LICENSE.txt",
+    "sha256": "454316E69743FB6796F1BA5F7EC815A06CBDF21A7A9EE5D2AECDEA2E17B03059"
+  },
+  {
+    "name": "Go standard library and runtime",
+    "version": "go1.27.4 licence text",
+    "license": "BSD-3-Clause",
+    "source": "Go runtime linked into multichoice.exe; licence text of the Go toolchain used to vendor and build the source in Vanta-0.6.0-third-party-sources.zip",
+    "file": "supplemental/components/go-runtime-LICENSE.txt",
+    "sha256": "911F8F5782931320F5B8D1160A76365B83AEA6447EE6C04FA6D5591467DB9DAD"
+  }
+]

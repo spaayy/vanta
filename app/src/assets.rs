@@ -1,0 +1,39 @@
+//! Assets compiled into the binary so the executable is self-contained.
+
+use std::borrow::Cow;
+
+use anyhow::Result;
+use gpui::{AssetSource, SharedString};
+
+/// GPUI's asset source: the images under `assets/` that `FILES` lists, looked
+/// up by their path relative to it. Nothing is read from disk at run time; a
+/// path missing from `FILES` loads as `None`.
+pub struct Assets;
+
+const FILES: &[(&str, &[u8])] = &[
+    ("brand/vanta-mark.svg", include_bytes!("../assets/brand/vanta-mark.svg")),
+    ("brand/eclean.png", include_bytes!("../assets/brand/eclean.png")),
+    ("icons/ring.svg", include_bytes!("../assets/icons/ring.svg")),
+    ("icons/status-dot.svg", include_bytes!("../assets/icons/status-dot.svg")),
+];
+
+impl AssetSource for Assets {
+    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        Ok(FILES.iter().find(|(name, _)| *name == path).map(|(_, bytes)| Cow::Borrowed(*bytes)))
+    }
+
+    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
+        Ok(FILES
+            .iter()
+            .filter(|(name, _)| name.starts_with(path))
+            .map(|(name, _)| SharedString::from(*name))
+            .collect())
+    }
+}
+
+/// The window icon, decoded once at startup.
+pub fn window_icon() -> Option<std::sync::Arc<image::RgbaImage>> {
+    let bytes = include_bytes!("../assets/brand/vanta-icon-256.png");
+    let image = image::load_from_memory(bytes).ok()?.to_rgba8();
+    Some(std::sync::Arc::new(image))
+}

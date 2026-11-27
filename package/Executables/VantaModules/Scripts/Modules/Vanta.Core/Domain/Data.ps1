@@ -1,0 +1,44 @@
+# Vanta.Core domain: data-file loading and sibling module import.
+
+function Import-VantaDataFile {
+    <#
+    .SYNOPSIS
+        Loads a PowerShell data file (.psd1) as a hashtable without executing code.
+        Every Vanta process pins module resolution through Initialize-VantaPowerShell.ps1
+        before it reaches this function, so the inbox cmdlet is always the one that runs.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$LiteralPath
+    )
+
+    return Microsoft.PowerShell.Utility\Import-PowerShellDataFile -LiteralPath $LiteralPath -ErrorAction Stop
+}
+
+function Import-VantaModule {
+    <#
+    .SYNOPSIS
+        Imports a sibling Vanta module by name from its exact manifest beside Vanta.Core,
+        so callers never depend on PSModulePath or an ambient module with the same name.
+        An already-loaded module is reused: in Windows PowerShell 5.1, nested forced
+        imports would unload commands that a long-running caller still uses.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^Vanta\.[A-Za-z]+$', Options = [Text.RegularExpressions.RegexOptions]::None)]
+        [string]$Name
+    )
+
+    $manifest = [IO.Path]::GetFullPath(
+        [IO.Path]::Combine($PSScriptRoot, '..', '..', $Name, "$Name.psd1")
+    )
+    if (-not [IO.File]::Exists($manifest)) {
+        throw "The Vanta module manifest '$manifest' is missing."
+    }
+
+    # Import into the global session state, where entry scripts and toggle companion
+    # functions run. Every sibling module imports Vanta.Core itself, and importing such a
+    # sibling from inside Vanta.Core's own session state recurses without end.
+    Import-Module -Name $manifest -Global -ErrorAction Stop
+}

@@ -1,0 +1,21 @@
+# Companion of delete-windows-specific-files.psd1: removes the Open-Shell launchers
+# from the VantaDesktop Start Menu folder on Windows versions that do not use them.
+$ErrorActionPreference = 'Stop'
+
+$target = Join-Path -Path ([Environment]::GetFolderPath('Windows')) -ChildPath 'VantaDesktop\4. Interface Tweaks\Start Menu'
+if (-not (Test-Path -LiteralPath $target -PathType Container)) {
+    return
+}
+
+$resolvedTarget = (Resolve-Path -LiteralPath $target).ProviderPath.TrimEnd('\')
+$vantaDesktopRoot = Join-Path -Path ([Environment]::GetFolderPath('Windows')) -ChildPath 'VantaDesktop'
+$resolvedVantaDesktopRoot = (Resolve-Path -LiteralPath $vantaDesktopRoot).ProviderPath.TrimEnd('\')
+
+if (-not $resolvedTarget.StartsWith($resolvedVantaDesktopRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to remove version-specific files from unexpected path '$resolvedTarget'."
+}
+
+Get-ChildItem -LiteralPath $resolvedTarget -Filter '*Open-Shell*' -Force -ErrorAction Stop |
+    ForEach-Object {
+        Remove-Item -LiteralPath $_.FullName -Force -Recurse -ErrorAction Stop
+    }

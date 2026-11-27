@@ -1,0 +1,56 @@
+[
+  {"categoria":"Jogos","itens":[
+    {"nome":"Steam","winget":"Valve.Steam"},
+    {"nome":"Riot Client","fonte":"pacote","ref":"instaladores\\Riot","interativo":true},
+    {"nome":"Epic Games Launcher","winget":"EpicGames.EpicGamesLauncher"}]},
+  {"categoria":"Comunicação","itens":[
+    {"nome":"Discord","winget":"Discord.Discord","extra":"Vencord"},
+    {"nome":"TeamSpeak 3","winget":"TeamSpeakSystems.TeamSpeakClient"}]},
+  {"categoria":"Periféricos e áudio","itens":[
+    {"nome":"Logitech G HUB","winget":"Logitech.GHUB"},
+    {"nome":"Equalizer APO + Peace","fonte":"pacote","ref":"instaladores\\EqualizerAPO"},
+    {"nome":"ISLC","winget":"Wagnardsoft.ISLC"},
+    {"nome":"MSI Afterburner","winget":"Guru3D.Afterburner"}]},
+  {"categoria":"Gravação e mídia","itens":[
+    {"nome":"OBS Studio","winget":"OBSProject.OBSStudio"},
+    {"nome":"VLC","winget":"VideoLAN.VLC"},
+    {"nome":"FFmpeg","winget":"Gyan.FFmpeg"},
+    {"nome":"HandBrake","winget":"HandBrake.HandBrake"},
+    {"nome":"Spotifast","fonte":"github","ref":"crmne/spotifast"},
+    {"nome":"Spotify (oficial)","winget":"Spotify.Spotify"}]},
+  {"categoria":"Ferramentas","itens":[
+    {"nome":"NanaZip","winget":"M2Team.NanaZip"},
+    {"nome":"7-Zip","winget":"7zip.7zip"},
+    {"nome":"WinRAR","winget":"RARLab.WinRAR"},
+    {"nome":"Lightshot","winget":"Skillbrains.Lightshot"},
+    {"nome":"ShareX","winget":"ShareX.ShareX"},
+    {"nome":"qBittorrent","winget":"qBittorrent.qBittorrent"},
+    {"nome":"Notepad++","winget":"Notepad++.Notepad++"},
+    {"nome":"LibreOffice","winget":"TheDocumentFoundation.LibreOffice"}]},
+  {"categoria":"Seus apps","itens":[
+    {"nome":"ZapFast","fonte":"github","ref":"crmne/zapfast"},
+    {"nome":"BatteryHub-plus","fonte":"pacote"},
+    {"nome":"LMUFFB","fonte":"pacote","ref":"avulsos\\LMUFFB"},
+    {"nome":"ArtCraft Launcher","fonte":"pacote"},
+    {"nome":"MultiViewer","winget":"MultiViewer.MultiViewer"}]},
+  {"categoria":"IA","itens":[
+    {"nome":"Claude (desktop)","winget":"Anthropic.Claude"},
+    {"nome":"Claude Code","fonte":"script"}]},
+  {"categoria":"Dev e terminal","itens":[
+    {"nome":"Windows Terminal","winget":"Microsoft.WindowsTerminal"},
+    {"nome":"Git","winget":"Git.Git"},
+    {"nome":"GitHub CLI","winget":"GitHub.cli"},
+    {"nome":"Python 3.12","winget":"Python.Python.3.12"},
+    {"nome":"uv","winget":"astral-sh.uv"},
+    {"nome":"Node.js","winget":"OpenJS.NodeJS"},
+    {"nome":"Bun","winget":"Oven-sh.Bun"},
+    {"nome":"MSYS2","winget":"MSYS2.MSYS2"},
+    {"nome":"Inno Setup","winget":"JRSoftware.InnoSetup"},
+    {"nome":"Java 8","winget":"Oracle.JavaRuntimeEnvironment"},
+    {"nome":"VS Code","winget":"Microsoft.VisualStudioCode"}]},
+  {"categoria":"Rede","itens":[
+    {"nome":"Tailscale","winget":"Tailscale.Tailscale"},
+    {"nome":"Cloudflare WARP","winget":"Cloudflare.Warp"}]},
+  {"categoria":"Driver de vídeo","itens":[
+    {"nome":"NVCleanstall (NVIDIA 610.88)","winget":"TechPowerUp.NVCleanstall","interativo":true}]}
+]

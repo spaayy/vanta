@@ -1,0 +1,1633 @@
+//! Words for the app's semantic state. Services and the model keep facts
+//! (a check's verdict and what it found, an outcome and the phase it ended
+//! in, a notice's cause); these functions turn them into sentences in the
+//! current language when a page renders, so switching language re-words
+//! everything already on screen.
+//!
+//! Raw diagnostics (Windows error text, paths, versions, build numbers) are
+//! passed through as text arguments and never translated or reformatted.
+
+use crate::model::{
+    AcquireProblem, ElevationProblem, FixedChoice, InstallBlock, Notice, Preflight, ProtectionReminder,
+    ReminderReason, RestartProblem, ScreenKind,
+};
+use crate::services::atlas_state::InstallMode;
+use crate::services::installer::{InstallOutcome, Phase};
+use crate::services::legacy_choices::Facts;
+use crate::services::package::Choice;
+use crate::services::preparation::{Activity, waits_for_offer};
+use crate::services::reports::SendProblem;
+use crate::services::requirements::{CheckDetail, CheckId, CheckResult};
+use crate::services::security::{Protection, SwitchCounts};
+use crate::services::settings::SettingsProblem;
+use crate::services::system::SystemInfo;
+use crate::services::windows_release::WindowsBlock;
+use crate::t;
+
+/// Joins items with the language's list separator: "Brave, Firefox".
+pub fn join_list(items: &[String]) -> String {
+    let separator = t!("list-separator");
+    items.join(&separator)
+}
+
+/// Joins items as a list that ends with the language's "and": "Tamper
+/// Protection, Real-time protection and Cloud-delivered protection".
+pub fn join_and(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [only] => only.clone(),
+        [head @ .., last] => t!("list-and", a = join_list(head), b = last.as_str()),
+    }
+}
+
+/// The user-facing name of a pending-restart marker id reported by the
+/// checks or the preparation worker. An id this build does not know is shown
+/// as it came, so a newer worker still says something.
+pub fn restart_reason(id: &str) -> String {
+    match id {
+        "servicing" => t!("prepare-reason-servicing"),
+        "windows-update" => t!("prepare-reason-windows-update"),
+        "file-renames" => t!("prepare-reason-file-renames"),
+        "update-agent" => t!("prepare-reason-update-agent"),
+        "feature-update" => t!("prepare-reason-feature-update"),
+        "feature-commit" => t!("prepare-reason-feature-commit"),
+        other => other.to_owned(),
+    }
+}
+
+pub fn restart_reasons(ids: &[String]) -> String {
+    if ids.is_empty() {
+        return t!("prepare-reason-unknown");
+    }
+    let names: Vec<String> = ids.iter().map(|id| restart_reason(id)).collect();
+    join_list(&names)
+}
+
+/// A Store update could not replace an app that is running.
+const ERROR_PACKAGES_IN_USE: &str = "0x80073D02";
+/// Windows Update refused to start while another install or a required
+/// restart is pending.
+const WU_E_INSTALL_NOT_ALLOWED: &str = "0x80240016";
+/// Windows found its component store damaged, so no update can install.
+const ERROR_SXS_COMPONENT_STORE_CORRUPT: &str = "0x80073712";
+/// The cause the worker names when Windows records damage to its component
+/// store that it can't repair.
+const COMPONENT_STORE_UNREPAIRABLE: &str = "component-store-unrepairable";
+
+/// Updates can't install because Windows' component store is damaged: one
+/// failed on it after Atlas's repair, or Windows records damage it can't
+/// repair. A reinstall fixes what Windows' own repair doesn't.
+pub fn component_store_damaged(failure: &Activity) -> bool {
+    failure.reason.as_deref() == Some(COMPONENT_STORE_UNREPAIRABLE)
+        || failure
+            .error_code
+            .as_deref()
+            .is_some_and(|code| code.eq_ignore_ascii_case(ERROR_SXS_COMPONENT_STORE_CORRUPT))
+}
+
+/// What to do about a preparation run that failed. `failure` is the
+/// worker's own report, if it wrote one; `has_error` says the app recorded
+/// an error of its own. A run that ended with neither is not called a
+/// failure it cannot describe.
+pub fn preparation_failure(failure: Option<&Activity>, has_error: bool) -> String {
+    let Some(failure) = failure else {
+        return if has_error { t!("prepare-failed") } else { t!("prepare-ended-unconfirmed") };
+    };
+    match failure.error_code.as_deref() {
+        Some(code) if code.eq_ignore_ascii_case(ERROR_PACKAGES_IN_USE) => {
+            let app = failure.package_name.clone().unwrap_or_else(|| t!("prepare-affected-app"));
+            t!("prepare-app-in-use", app = app)
+        }
+        Some(code) if code.eq_ignore_ascii_case(WU_E_INSTALL_NOT_ALLOWED) => t!("prepare-install-busy"),
+        Some(code) if code.eq_ignore_ascii_case(ERROR_SXS_COMPONENT_STORE_CORRUPT) => {
+            t!("prepare-failed-component-store")
+        }
+        _ => failure
+            .reason
+            .as_deref()
+            .and_then(preparation_failure_reason)
+            .unwrap_or_else(|| t!("prepare-failed")),
+    }
+}
+
+/// Advice for a cause the preparation worker names. An id this build does
+/// not know gets the general message instead.
+pub fn preparation_failure_reason(id: &str) -> Option<String> {
+    Some(match id {
+        "session-owner" => t!("prepare-failed-session-owner"),
+        "store-missing" => t!("prepare-failed-store-missing"),
+        "store-paused-battery" => t!("prepare-failed-store-battery"),
+        "store-paused-network" => t!("prepare-failed-store-network"),
+        "store-timeout" => t!("prepare-failed-store-timeout"),
+        "store-passes" => t!("prepare-failed-store-passes"),
+        "store-repair-failed" => t!("prepare-failed-store-repair-failed"),
+        COMPONENT_STORE_UNREPAIRABLE => t!("prepare-failed-component-store-unrepairable"),
+        "manual-updates" => t!("prepare-failed-manual-updates"),
+        "windows-passes" => t!("prepare-failed-windows-passes"),
+        _ => return None,
+    })
+}
+
+/// What preparation did about Microsoft Store itself, said once it's done.
+pub fn store_outcome(outcome: crate::services::preparation::StoreOutcome) -> String {
+    use crate::services::preparation::StoreOutcome;
+    match outcome {
+        StoreOutcome::Updated => t!("prepare-store-updated"),
+        StoreOutcome::Bootstrapped => t!("prepare-store-bootstrapped"),
+        StoreOutcome::Repaired => t!("prepare-store-repaired"),
+        StoreOutcome::SkippedRemoved => t!("prepare-store-skipped-removed"),
+    }
+}
+
+/// The release names a move needs for its wording: where Windows goes
+/// (`release`), where it is (`current`) and the Atlas version it's for.
+pub struct TransitionWords<'a> {
+    pub release: &'a str,
+    pub current: &'a str,
+    pub version: &'a str,
+}
+
+/// What a move between Windows releases ended with and what to do next, for
+/// a cause the update worker names. `None` for any other failure.
+pub fn transition_failure(failure: &Activity, words: &TransitionWords) -> Option<String> {
+    let (release, current, version) = (words.release, words.current, words.version);
+    let reason = failure.reason.as_deref()?;
+    Some(match reason {
+        // A missing monthly update is installed first; one Windows Update
+        // doesn't offer yet is the same wait as the release itself.
+        reason if waits_for_offer(reason) => {
+            t!("prepare-failed-feature-not-offered", release = release, current = current)
+        }
+        "feature-hardware" => {
+            let missing: Vec<String> = failure
+                .hardware
+                .as_deref()
+                .unwrap_or_default()
+                .split(',')
+                .filter_map(|part| match part.trim() {
+                    "tpm" => Some(t!("hardware-tpm")),
+                    "uefi" => Some(t!("hardware-uefi")),
+                    _ => None,
+                })
+                .collect();
+            t!(
+                "prepare-failed-feature-hardware",
+                missing = join_list(&missing),
+                release = release,
+                current = current,
+                version = version
+            )
+        }
+        "feature-hidden" => t!("prepare-failed-feature-hidden", release = release),
+        "feature-disk-space" => t!(
+            "prepare-failed-feature-disk-space",
+            needed = failure.needed_gb.clone().unwrap_or_default(),
+            drive = failure.drive.clone().unwrap_or_default(),
+            free = failure.free_gb.clone().unwrap_or_default()
+        ),
+        "feature-servicing" => t!("prepare-failed-feature-servicing"),
+        "feature-managed" => t!("prepare-failed-feature-managed", release = release),
+        "feature-policy" => {
+            t!("prepare-failed-feature-policy", setting = failure.setting.clone().unwrap_or_default())
+        }
+        "feature-blocked" => {
+            t!("prepare-failed-feature-blocked", setting = failure.setting.clone().unwrap_or_default())
+        }
+        "feature-rolled-back" => {
+            t!("prepare-failed-feature-rolled-back", release = release, current = current)
+        }
+        "feature-components-lost" => t!("prepare-failed-feature-components-lost", version = version),
+        "feature-build" => t!("prepare-failed-feature-build"),
+        "feature-journal" => t!("prepare-failed-feature-journal"),
+        "feature-pin" => {
+            t!("prepare-failed-feature-pin", setting = failure.setting.clone().unwrap_or_default())
+        }
+        "feature-terms" => t!("prepare-failed-feature-terms", release = release),
+        "feature-failed" => t!("prepare-failed-feature-failed", release = release, current = current),
+        _ => return None,
+    })
+}
+
+/// Why putting the Windows Update settings back failed, from the worker's error.
+pub fn restore_failure(error: &str) -> String {
+    restore_failure_cause(error).unwrap_or_else(|| t!("home-update-access-failed", error = error))
+}
+
+/// Why putting the settings back failed, for a cause the worker names; `None`
+/// for any other error, which only the log explains.
+pub fn restore_failure_cause(error: &str) -> Option<String> {
+    match crate::services::preparation::operation_reason(error) {
+        Some("feature-install-active") => Some(t!("home-update-access-install-active")),
+        Some("feature-journal") => Some(t!("home-update-access-unreadable")),
+        _ => None,
+    }
+}
+
+/// Why preparation needs another connection, from the cause the worker
+/// reported. Older workers report none.
+pub fn preparation_network(reason: Option<&str>) -> String {
+    match reason {
+        Some("limited") => t!("prepare-network-limited"),
+        Some("metered") => t!("prepare-network-metered"),
+        _ => t!("prepare-network-needed"),
+    }
+}
+
+/// Joins alternatives: "26100 or 26200".
+pub fn join_or(items: &[String]) -> String {
+    let mut iter = items.iter();
+    let Some(first) = iter.next() else { return String::new() };
+    iter.fold(first.clone(), |acc, next| t!("list-or", a = acc, b = next))
+}
+
+/// "900 MB" or "6.1 GB": a file size in the unit that suits it.
+pub fn file_size(bytes: u64) -> String {
+    let unit = super::fmt::SizeUnit::of(bytes);
+    let size = unit.value(bytes);
+    match unit {
+        super::fmt::SizeUnit::Megabytes => t!("size-megabytes", size = size),
+        super::fmt::SizeUnit::Gigabytes => t!("size-gigabytes", size = size),
+    }
+}
+
+/// "Windows 11 Pro 25H2 (build 26200.1234)".
+pub fn system_description(system: &SystemInfo) -> String {
+    t!(
+        "system-description",
+        product = system.product_name.as_str(),
+        version = system.display_version.as_str(),
+        build = system.build_label()
+    )
+}
+
+impl crate::flow::Step {
+    pub fn title(self) -> String {
+        use crate::flow::Step;
+        match self {
+            Step::Ready => t!("step-ready"),
+            Step::Options => t!("step-options"),
+            Step::Security => t!("step-security"),
+            Step::Install => t!("step-install"),
+        }
+    }
+}
+
+impl CheckId {
+    pub fn title(self) -> String {
+        match self {
+            CheckId::Administrator => t!("check-administrator"),
+            CheckId::UserAccount => t!("check-user-account"),
+            CheckId::SupportedBuild => t!("check-supported-build"),
+            CheckId::PendingUpdates => t!("check-pending-updates"),
+            CheckId::PendingReboot => t!("check-pending-reboot"),
+            CheckId::ThirdPartyAntivirus => t!("check-third-party-antivirus"),
+            CheckId::Internet => t!("check-internet"),
+            CheckId::Power => t!("check-power"),
+            CheckId::Activation => t!("check-activation"),
+        }
+    }
+
+    /// Label for the button that opens the Settings page in `fix_target`.
+    pub fn fix_label(self) -> Option<String> {
+        Some(match self {
+            CheckId::PendingUpdates | CheckId::PendingReboot => t!("check-fix-windows-update"),
+            CheckId::ThirdPartyAntivirus => t!("check-fix-apps"),
+            CheckId::Internet => t!("check-fix-network"),
+            CheckId::Power => t!("check-fix-power"),
+            CheckId::Activation => t!("check-fix-activation"),
+            _ => return None,
+        })
+    }
+}
+
+impl CheckResult {
+    /// What the user confirms by hand, for the one result that allows it
+    /// (see [`CheckResult::needs_acknowledgement`]).
+    pub fn acknowledgement(&self) -> Option<String> {
+        self.needs_acknowledgement().then(|| t!("check-ack-updates"))
+    }
+}
+
+impl CheckDetail {
+    pub fn text(&self, system: &SystemInfo) -> String {
+        match self {
+            CheckDetail::AdministratorOk => t!("detail-admin-ok"),
+            CheckDetail::AdministratorMissing => t!("detail-admin-missing"),
+            CheckDetail::UserAccountOk => t!("detail-user-account-ok"),
+            CheckDetail::UserAccountNotReady => t!("detail-user-account-not-ready"),
+            CheckDetail::UserAccountWorkOrSchool => t!("detail-user-account-work-or-school"),
+            CheckDetail::UserAccountUnknown { error } => t!("detail-user-account-unknown", error = error),
+            CheckDetail::BuildSupported => system_description(system),
+            CheckDetail::EditionUnsupported => t!("detail-edition-unsupported"),
+            CheckDetail::WindowsPreview => t!("detail-windows-preview"),
+            CheckDetail::WindowsReleaseUnlisted => {
+                t!("detail-windows-release-unlisted", build = format!("{}.{}", system.build, system.revision))
+            }
+            CheckDetail::WindowsReleaseUnknown => t!("detail-windows-release-unknown"),
+            CheckDetail::BuildTransition { current, release } => {
+                t!("detail-build-transition", current = current.as_str(), release = release.as_str())
+            }
+            CheckDetail::BuildUnsupported { supported, actual } => {
+                if supported.is_empty() {
+                    return t!("detail-build-missing");
+                }
+                let builds: Vec<String> = supported.iter().map(u32::to_string).collect();
+                t!("detail-build-unsupported", builds = join_or(&builds), build = actual.to_string())
+            }
+            CheckDetail::UpdatesNone => t!("detail-updates-none"),
+            CheckDetail::UpdatesPending { titles } => {
+                let shown: Vec<String> = titles.iter().take(2).cloned().collect();
+                t!("detail-updates-pending", count = titles.len(), titles = shown.join("; "))
+            }
+            CheckDetail::UpdatesUnknown { error } => t!("detail-updates-unknown", error = error),
+            CheckDetail::RebootNone => t!("detail-reboot-none"),
+            CheckDetail::RebootPending { reasons } if reasons.is_empty() => t!("detail-reboot-pending"),
+            CheckDetail::RebootPending { reasons } => {
+                t!("detail-reboot-pending-reasons", reasons = restart_reasons(reasons))
+            }
+            CheckDetail::RebootFileRenames { files } => {
+                let shown: Vec<String> = files.iter().take(3).cloned().collect();
+                t!("detail-reboot-file-renames", files = join_list(&shown))
+            }
+            CheckDetail::RebootUnknown { error } => t!("detail-reboot-unknown", error = error),
+            CheckDetail::AntivirusNone => t!("detail-antivirus-none"),
+            CheckDetail::AntivirusFound { products } => {
+                t!("detail-antivirus-found", products = join_list(products))
+            }
+            CheckDetail::AntivirusStale { products } => {
+                t!("detail-antivirus-stale", products = join_list(products))
+            }
+            CheckDetail::AntivirusUnknown { error } => t!("detail-antivirus-unknown", error = error),
+            CheckDetail::InternetOk => t!("detail-internet-ok"),
+            CheckDetail::InternetMissing => t!("detail-internet-missing"),
+            CheckDetail::PowerMains => t!("detail-power-mains"),
+            CheckDetail::PowerBattery => t!("detail-power-battery"),
+            CheckDetail::PowerUnknown => t!("detail-power-unknown"),
+            CheckDetail::ActivationOk => t!("detail-activation-ok"),
+            CheckDetail::ActivationMissing => t!("detail-activation-missing"),
+            CheckDetail::ActivationNoLicence => t!("detail-activation-no-licence"),
+            CheckDetail::ActivationUnknown { error } => t!("detail-activation-unknown", error = error),
+        }
+    }
+}
+
+impl Protection {
+    /// The switch's name as Windows Security shows it.
+    pub fn title(self) -> String {
+        match self {
+            Protection::TamperProtection => t!("protection-tamper"),
+            Protection::RealTimeProtection => t!("protection-realtime"),
+            Protection::CloudDelivered => t!("protection-cloud"),
+            Protection::SampleSubmission => t!("protection-samples"),
+        }
+    }
+
+    pub fn why(self) -> String {
+        match self {
+            Protection::TamperProtection => t!("protection-tamper-why"),
+            Protection::RealTimeProtection => t!("protection-realtime-why"),
+            Protection::CloudDelivered => t!("protection-cloud-why"),
+            Protection::SampleSubmission => t!("protection-samples-why"),
+        }
+    }
+}
+
+/// "2 still on", "1 still on, 1 can't be read", "All off".
+pub fn security_summary(counts: &SwitchCounts) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if counts.on > 0 {
+        parts.push(t!("security-count-still-on", count = counts.on));
+    }
+    if counts.unknown > 0 {
+        parts.push(t!("security-count-unreadable", count = counts.unknown));
+    }
+    let mut iter = parts.into_iter();
+    match iter.next() {
+        None => t!("security-all-off"),
+        Some(first) => iter.fold(first, |acc, next| t!("security-count-join", a = acc, b = next)),
+    }
+}
+
+/// Why Microsoft Defender isn't on this PC, so the Windows Security step has
+/// no switches to turn off. Only Atlas's NoDefender package counts as Atlas
+/// having removed it; none of them stops the step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DefenderAbsence {
+    /// Atlas's package removed it, and this installation brings it back.
+    Restore,
+    /// Atlas's package removed it, and it stays removed.
+    Removed,
+    /// Atlas didn't remove it, and the user chose to keep it, which Atlas
+    /// can't do.
+    Missing,
+    /// Atlas didn't remove it, and the user chose to remove it.
+    Absent,
+}
+
+impl DefenderAbsence {
+    /// The step's bar: its title, then its message.
+    pub fn banner(self) -> (String, String) {
+        match self {
+            DefenderAbsence::Restore => {
+                (t!("security-banner-restore-title"), t!("security-banner-restore-message"))
+            }
+            DefenderAbsence::Removed => {
+                (t!("security-banner-removed-title"), t!("security-banner-absent-message"))
+            }
+            DefenderAbsence::Missing => {
+                (t!("security-banner-missing-title"), t!("security-banner-missing-message"))
+            }
+            DefenderAbsence::Absent => {
+                (t!("security-banner-absent-title"), t!("security-banner-absent-message"))
+            }
+        }
+    }
+}
+
+impl ProtectionReminder {
+    /// What to turn back on, naming the switches as Windows Security does,
+    /// or that Defender is missing.
+    pub fn message(&self) -> String {
+        if self.missing {
+            return t!("installed-defender-missing-message");
+        }
+        let names: Vec<String> = self.switches.iter().map(|switch| switch.title()).collect();
+        let switches = join_and(&names);
+        match (self.unreadable, self.reason) {
+            (true, _) => t!("home-security-reminder-unreadable-message", switches = switches),
+            (false, ReminderReason::LeftFlow) => t!("home-security-reminder-message", switches = switches),
+            (false, ReminderReason::KeptDefender) => t!("installed-security-message", switches = switches),
+        }
+    }
+}
+
+/// Why a report wasn't sent, and what to do instead.
+pub fn report_failure(problem: SendProblem) -> String {
+    match problem {
+        SendProblem::Retry => t!("report-failed"),
+        SendProblem::Busy => t!("report-failed-busy"),
+        SendProblem::Outdated => t!("report-failed-outdated"),
+        SendProblem::Diagnostics => t!("report-failed-diagnostics"),
+    }
+}
+
+/// What a finished attempt's advice depends on besides its outcome.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AttemptFacts {
+    /// How far the install got.
+    pub phase: Phase,
+    /// A retry of an install an earlier attempt already began applying:
+    /// stopping early no longer means nothing changed.
+    pub resumed: bool,
+    /// It stopped on the error the attempt before it stopped on.
+    pub repeated: bool,
+    /// There are no Defender protections left to turn back on (see
+    /// [`AppModel::defender_removed`](crate::model::AppModel::defender_removed)).
+    pub defender_removed: bool,
+    /// The apps Windows wouldn't remove, as the installer names them.
+    pub unremoved_apps: Vec<String>,
+}
+
+impl InstallOutcome {
+    pub fn title(self) -> String {
+        match self {
+            InstallOutcome::Succeeded => t!("outcome-succeeded-title"),
+            InstallOutcome::Lost => t!("outcome-lost-title"),
+            _ => t!("outcome-failed-title"),
+        }
+    }
+
+    /// The result bar's title: an installer that never started didn't
+    /// "finish" anything, unless an earlier attempt had already begun.
+    pub fn heading(self, resumed: bool) -> String {
+        match self {
+            InstallOutcome::NotStarted if !resumed => t!("preflight-title"),
+            _ => self.title(),
+        }
+    }
+
+    /// What the user should do next, given how far the install got and what
+    /// else is known about the attempt (see [`AttemptFacts`]).
+    pub fn advice(self, facts: &AttemptFacts) -> String {
+        let (resumed, removed) = (facts.resumed, facts.defender_removed);
+        let early = facts.phase < Phase::Applying;
+        match self {
+            InstallOutcome::Succeeded => t!("restart-needed"),
+            InstallOutcome::Failed(2) if resumed && early => t!("outcome-requirements-resumed"),
+            InstallOutcome::Failed(2) => t!("outcome-requirements"),
+            InstallOutcome::Failed(3) if resumed && early => t!("outcome-not-elevated-resumed"),
+            InstallOutcome::Failed(3) => t!("outcome-not-elevated"),
+            outcome if outcome.needs_preparation() && resumed => t!("outcome-preparation-stale-resumed"),
+            outcome if outcome.needs_preparation() => t!("outcome-preparation-stale"),
+            // The same error again: another identical attempt won't get further.
+            InstallOutcome::Failed(_) if facts.repeated => repeated_failure(facts),
+            InstallOutcome::Failed(_) | InstallOutcome::NotStarted if resumed && early => {
+                if removed {
+                    t!("outcome-failed-resumed-defender-removed")
+                } else {
+                    t!("outcome-failed-resumed")
+                }
+            }
+            InstallOutcome::Failed(_) => match facts.phase {
+                Phase::Preflight => t!("outcome-failed-preflight"),
+                Phase::Staging => t!("outcome-failed-staging"),
+                Phase::Applying | Phase::Done if removed => t!("outcome-failed-applying-defender-removed"),
+                Phase::Applying | Phase::Done => t!("outcome-failed-applying"),
+            },
+            InstallOutcome::NotStarted => t!("outcome-not-started"),
+            InstallOutcome::Lost if removed => t!("outcome-lost-defender-removed"),
+            InstallOutcome::Lost => t!("outcome-lost"),
+        }
+    }
+}
+
+/// A failure on the error the attempt before stopped on: it names the apps
+/// Windows wouldn't remove, when that was the error, and leads to a report
+/// rather than another try.
+fn repeated_failure(facts: &AttemptFacts) -> String {
+    let removed = facts.defender_removed;
+    if facts.unremoved_apps.is_empty() {
+        return if removed {
+            t!("outcome-failed-repeated-defender-removed")
+        } else {
+            t!("outcome-failed-repeated")
+        };
+    }
+    let apps = join_and(&facts.unremoved_apps);
+    if removed {
+        t!("outcome-failed-repeated-apps-defender-removed", apps = apps)
+    } else {
+        t!("outcome-failed-repeated-apps", apps = apps)
+    }
+}
+
+impl InstallMode {
+    /// "Fresh install", for a detail row.
+    pub fn label(self) -> String {
+        match self {
+            InstallMode::Fresh => t!("mode-fresh"),
+            InstallMode::Upgrade => t!("mode-upgrade"),
+            InstallMode::Reapply => t!("mode-reapply"),
+            InstallMode::Rebase => t!("mode-rebase"),
+            InstallMode::Unknown => t!("mode-unknown"),
+        }
+    }
+
+    /// "fresh install", inside a history line.
+    pub fn history_label(self) -> String {
+        match self {
+            InstallMode::Fresh => t!("history-mode-fresh"),
+            InstallMode::Upgrade => t!("history-mode-upgrade"),
+            InstallMode::Reapply => t!("history-mode-reapply"),
+            InstallMode::Rebase => t!("history-mode-rebase"),
+            InstallMode::Unknown => t!("history-mode-unknown"),
+        }
+    }
+}
+
+impl ScreenKind {
+    /// Short name, for the summary ("Microsoft Defender").
+    pub fn title(self) -> String {
+        match self {
+            ScreenKind::UpdatePath => t!("step-options"),
+            ScreenKind::Defender => t!("screen-defender-title"),
+            ScreenKind::Mitigations => t!("screen-mitigations-title"),
+            ScreenKind::Updates => t!("screen-updates-title"),
+            ScreenKind::Keyboard => t!("screen-keyboard-title"),
+            ScreenKind::Browser => t!("screen-browser-title"),
+            ScreenKind::Power => t!("screen-power-title"),
+            ScreenKind::Apps => t!("screen-apps-title"),
+            ScreenKind::OptionalApps => t!("screen-optional-apps-title"),
+            ScreenKind::ChooseOne => t!("screen-choose-one-title"),
+            ScreenKind::Extras => t!("screen-extras-title"),
+        }
+    }
+
+    /// The decision as a question ("Keep Microsoft Defender?").
+    pub fn question(self) -> String {
+        match self {
+            ScreenKind::Defender => t!("screen-defender-question"),
+            ScreenKind::Mitigations => t!("screen-mitigations-question"),
+            ScreenKind::Updates => t!("screen-updates-question"),
+            ScreenKind::Keyboard => t!("screen-keyboard-question"),
+            // Its title is already the generic question; wrapping it would
+            // read "Choose an option for Choose an option". The extras screen
+            // asks no one question: each page on it has its own title.
+            ScreenKind::UpdatePath | ScreenKind::ChooseOne | ScreenKind::Extras => self.title(),
+            other => t!("screen-generic-question", title = other.title()),
+        }
+    }
+
+    pub fn learn_more(self) -> String {
+        match self {
+            ScreenKind::Defender => t!("learn-more-defender"),
+            ScreenKind::Mitigations => t!("learn-more-mitigations"),
+            ScreenKind::Updates => t!("learn-more-updates"),
+            ScreenKind::Keyboard => t!("learn-more-generic"),
+            ScreenKind::Browser => t!("learn-more-browser"),
+            ScreenKind::Power => t!("learn-more-power"),
+            ScreenKind::Apps => t!("learn-more-apps"),
+            ScreenKind::OptionalApps => t!("learn-more-eclean"),
+            ScreenKind::UpdatePath | ScreenKind::ChooseOne | ScreenKind::Extras => t!("learn-more-generic"),
+        }
+    }
+}
+
+/// What choosing an option means for the PC, in one line, for the options
+/// this app knows by id. Other options show only their label.
+pub fn option_consequence(id: &str) -> Option<String> {
+    Some(match id {
+        "defender-enable" => t!("consequence-defender-enable"),
+        "defender-disable" => t!("consequence-defender-disable"),
+        "mitigations-default" => t!("consequence-mitigations-default"),
+        "mitigations-disable" => t!("consequence-mitigations-disable"),
+        "auto-updates-disable" => t!("consequence-auto-updates-disable"),
+        "auto-updates-default" => t!("consequence-auto-updates-default"),
+        "keyboard-shortcuts" => t!("consequence-keyboard-shortcuts"),
+        "keyboard-selector" => t!("consequence-keyboard-selector"),
+        "keyboard-single" => t!("consequence-keyboard-single"),
+        "disable-hibernation" => t!("consequence-disable-hibernation"),
+        "disable-power-saving" => t!("consequence-disable-power-saving"),
+        "disable-core-isolation" => t!("consequence-disable-core-isolation"),
+        "remove-snipping-tool" => t!("consequence-remove-snipping-tool"),
+        "uninstall-edge" => t!("consequence-uninstall-edge"),
+        "install-another-browser" => t!("consequence-install-another-browser"),
+        "install-toolbox" => t!("consequence-install-toolbox"),
+        "install-eclean" => t!("consequence-install-eclean"),
+        _ => return None,
+    })
+}
+
+/// App copy for a message keyed by a manifest id, in the current language,
+/// or `None` when this app has no such message: the id is one a newer
+/// package added.
+fn known(message: &str) -> Option<String> {
+    let catalog = super::current();
+    catalog.has(message).then(|| catalog.format(message, &[]))
+}
+
+/// The label for an option: this app's own (`package-option-<id>`) for an
+/// id it knows, or else `label`, the manifest's English.
+pub fn option_label(id: &str, label: &str) -> String {
+    known(&format!("package-option-{id}")).unwrap_or_else(|| label.trim().to_owned())
+}
+
+/// What an option means for the install on this PC, which has the user's
+/// data: removing Microsoft Edge deletes its bookmarks, history and saved
+/// passwords here. Before the desktop exists (an ISO's setup) there is no
+/// data yet, so the general line applies, as on ISO creation's own pages.
+pub fn install_consequence(id: &str, before_desktop: bool) -> Option<String> {
+    match id {
+        "uninstall-edge" if !before_desktop => Some(t!("consequence-uninstall-edge-data")),
+        _ => option_consequence(id),
+    }
+}
+
+/// The caution a list of choices about to be applied to this PC shows under
+/// an option that deletes the user's data.
+pub fn data_caution(id: &str) -> Option<String> {
+    (id == "uninstall-edge").then(|| t!("caution-uninstall-edge"))
+}
+
+/// The line under option `id` while choosing again, said instead of what the
+/// option usually means, when the answer changes this PC, as the update's
+/// Choices step applies it: Defender back where Atlas's package removed it,
+/// a toggle Atlas recorded off, or VBS the PC shows off, turned back on,
+/// Snipping Tool removed for good. `chosen` is whether the answer is chosen:
+/// always for an option of a single choice, which is an answer of its own;
+/// for a check box, whether it's ticked. `facts` is what the PC shows, as the
+/// update reads it.
+pub fn change_line(id: &str, chosen: bool, facts: &Facts) -> Option<String> {
+    let record = |toggle: &str| facts.toggles.get(toggle).copied();
+    Some(match id {
+        "defender-enable" if facts.defender_package_installed() => t!("change-defender-enable"),
+        // Every protection on stays on: Atlas never lowers them to Windows' default.
+        "mitigations-default" if record("Mitigations") == Some(2) => t!("change-mitigations-all-on"),
+        "mitigations-default" if record("Mitigations") == Some(0) => t!("change-mitigations-default"),
+        "auto-updates-default" if record("AutomaticUpdates") == Some(0) => t!("change-auto-updates-default"),
+        // Without Atlas's record of turning them off, clearing them changes nothing.
+        "disable-hibernation" if !chosen && record("Hibernation") == Some(0) => t!("change-hibernation-on"),
+        "disable-power-saving" if !chosen && record("PowerSaving") == Some(0) => t!("change-power-saving-on"),
+        // VBS goes by what the PC shows where it could be read: a record
+        // outlasts a change Windows Security or another tool made since.
+        "disable-core-isolation"
+            if !chosen && facts.core_isolation_off.unwrap_or(record("VbsState") == Some(0)) =>
+        {
+            t!("change-core-isolation-on")
+        }
+        "remove-snipping-tool" if chosen && facts.snipping_tool_removed() != Some(true) => {
+            t!("change-remove-snipping-tool")
+        }
+        _ => return None,
+    })
+}
+
+/// The Atlas Toolbox's name, which is the same in every language.
+const TOOLBOX: &str = "Atlas Toolbox";
+
+/// Why an update can't change an option, for the box Your choices shows
+/// ticked and disabled. `label` names an option, such as a browser. Keeping
+/// the choices fixes options only on screens it doesn't show, so it has no
+/// words.
+pub fn fixed_reason(fixed: &FixedChoice, label: impl Fn(&str) -> String) -> Option<String> {
+    match fixed {
+        FixedChoice::Kept => None,
+        FixedChoice::EdgeRemoved => Some(t!("fixed-uninstall-edge")),
+        FixedChoice::Installed(name) if name == "install-toolbox" => {
+            Some(t!("fixed-installed", app = TOOLBOX))
+        }
+        FixedChoice::Installed(name) => Some(t!("fixed-installed", app = label(name))),
+    }
+}
+
+/// What a choice is about: this app's own description
+/// (`package-choice-<id>-description`) for a choice it describes, or else the
+/// manifest's English, if it has any.
+pub fn choice_description(choice: &Choice) -> Option<String> {
+    known(&format!("package-choice-{}-description", choice.id))
+        .or_else(|| Some(choice.description.trim().to_owned()).filter(|text| !text.is_empty()))
+}
+impl Notice {
+    pub fn title(&self) -> String {
+        match self {
+            Notice::SettingsReset(_) => t!("notice-settings-reset-title"),
+            Notice::SettingsNotSaved { .. } => t!("notice-settings-not-saved-title"),
+            Notice::SessionUnreadable { .. } => t!("notice-session-unreadable-title"),
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            Notice::SettingsReset(problem) => match problem {
+                SettingsProblem::Unreadable { error } => t!("notice-settings-unreadable", error = error),
+                SettingsProblem::DamagedKept { error, kept_as } => {
+                    t!("notice-settings-damaged-kept", file = kept_as, error = error)
+                }
+                SettingsProblem::Damaged { error } => t!("notice-settings-damaged", error = error),
+            },
+            Notice::SettingsNotSaved { error } => t!("notice-settings-not-saved", error = error),
+            Notice::SessionUnreadable { error, record } => {
+                t!("notice-session-unreadable-message", path = record.display().to_string(), error = error)
+            }
+        }
+    }
+}
+
+impl InstallBlock {
+    /// `bundled` is a tester build, which can't open another package.
+    pub fn text(&self, bundled: bool) -> String {
+        match self {
+            InstallBlock::Unsupported { source, target: Some(target) } => {
+                t!("install-source-unsupported", source = source, target = target)
+            }
+            InstallBlock::Unsupported { source, target: None } => {
+                t!("install-source-unsupported-any", source = source)
+            }
+            InstallBlock::ResumeOther { target, .. } if bundled => {
+                t!("install-source-resume-bundled", target = target)
+            }
+            InstallBlock::ResumeOther { target, downloads } => {
+                t!("install-source-resume", target = target, folder = downloads.display().to_string())
+            }
+            InstallBlock::RecordUnreadable { error, record } => {
+                t!("notice-session-unreadable-message", path = record.display().to_string(), error = error)
+            }
+            InstallBlock::Unknown => t!("install-source-unknown"),
+            InstallBlock::Windows { block, version, product, current, releases, ending } => match block {
+                WindowsBlock::Edition => match ending {
+                    Some(date) => t!(
+                        "install-windows-edition-ending",
+                        version = version.as_str(),
+                        product = product.as_str(),
+                        current = current.as_str(),
+                        date = crate::i18n::fmt::day(*date)
+                    ),
+                    None => {
+                        t!("install-windows-edition", version = version.as_str(), product = product.as_str())
+                    }
+                },
+                WindowsBlock::NoPath { .. } => {
+                    t!("install-windows-no-path", version = version.as_str(), releases = join_or(releases))
+                }
+                WindowsBlock::Preview => t!("detail-windows-preview"),
+            },
+        }
+    }
+}
+
+/// Why a package needs a newer Atlas Manager, naming the version it asks
+/// for when it names one; the Download Atlas Manager button goes beside it.
+pub fn manager_outdated(required: Option<&str>) -> String {
+    match required {
+        Some(version) => t!("acquire-manager-outdated", version = version),
+        None => t!("acquire-manager-outdated-any"),
+    }
+}
+
+impl AcquireProblem {
+    /// `bundled` is a tester build, where the only remedy is Try again.
+    pub fn text(&self, bundled: bool) -> String {
+        match self {
+            AcquireProblem::NoPackageAsset { version } => t!("acquire-no-asset", version = version),
+            AcquireProblem::Unsupported { .. } | AcquireProblem::NotAPackage => t!("acquire-unsupported"),
+            AcquireProblem::Incomplete { version } if bundled => {
+                let error = crate::services::package::Incomplete { version: version.clone() }.to_string();
+                t!("acquire-failed-bundled", error = error)
+            }
+            AcquireProblem::Incomplete { version } => t!("acquire-incomplete", version = version),
+            AcquireProblem::ManagerOutdated { required } => manager_outdated(required.as_deref()),
+            AcquireProblem::Stalled => t!("acquire-stalled"),
+            AcquireProblem::Other { error } if bundled => t!("acquire-failed-bundled", error = error),
+            AcquireProblem::Other { error } => t!("acquire-failed", error = error),
+        }
+    }
+}
+
+impl Preflight {
+    /// `resumed` is a retry of an install an earlier attempt already began
+    /// applying: a launch refused now changed nothing, but that one did.
+    pub fn text(&self, system: &SystemInfo, resumed: bool) -> String {
+        match self {
+            Preflight::InvalidOptions { error } => t!("preflight-invalid-options", error = error),
+            Preflight::Changed { checks, security } => {
+                let mut problems: Vec<String> = checks
+                    .iter()
+                    .map(|(id, detail)| {
+                        t!("preflight-problem", title = id.title(), detail = detail.text(system))
+                    })
+                    .collect();
+                if let Some(counts) = security {
+                    problems.push(t!("preflight-security", summary = security_summary(counts)));
+                }
+                t!("preflight-changed", problems = problems.join(" "))
+            }
+            Preflight::Busy => t!("preflight-busy"),
+            Preflight::TakenOver => t!("preflight-taken-over"),
+            Preflight::RecordUnreadable { error } => t!("preflight-record-unreadable", error = error),
+            Preflight::Refused { error } if resumed => t!("preflight-refused-resumed", error = error),
+            Preflight::Refused { error } => t!("preflight-refused", error = error),
+        }
+    }
+}
+
+impl ElevationProblem {
+    pub fn text(&self) -> String {
+        match self {
+            ElevationProblem::Declined => t!("elevation-declined"),
+            ElevationProblem::DeclinedContinue => t!("elevation-declined-continue"),
+            ElevationProblem::TakenOver => t!("elevation-taken-over"),
+            ElevationProblem::DraftNotSaved { error } => t!("elevation-draft-not-saved", error = error),
+        }
+    }
+}
+
+impl RestartProblem {
+    pub fn text(&self) -> String {
+        match self {
+            RestartProblem::Start { error } => t!("restart-start-failed", error = error),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::testing::english;
+    use crate::services::package::{ChoiceKind, ChoiceOption};
+    use crate::services::security::SwitchCounts;
+
+    #[test]
+    fn security_summary_lists_only_nonzero_counts() {
+        english(|| {
+            assert_eq!(security_summary(&SwitchCounts { off: 4, on: 0, unknown: 0 }), t!("security-all-off"));
+            assert_eq!(
+                security_summary(&SwitchCounts { off: 2, on: 0, unknown: 2 }),
+                t!("security-count-unreadable", count = 2u32)
+            );
+            assert_eq!(
+                security_summary(&SwitchCounts { off: 2, on: 1, unknown: 1 }),
+                t!(
+                    "security-count-join",
+                    a = t!("security-count-still-on", count = 1u32),
+                    b = t!("security-count-unreadable", count = 1u32)
+                )
+            );
+        });
+    }
+
+    /// An unrecognised required single choice is a ChooseOne screen. Its heading
+    /// must not wrap its own title in the generic question.
+    #[test]
+    fn no_screen_question_repeats_its_own_title() {
+        english(|| {
+            assert_eq!(ScreenKind::ChooseOne.question(), ScreenKind::ChooseOne.title());
+            for kind in [
+                ScreenKind::Defender,
+                ScreenKind::Mitigations,
+                ScreenKind::Updates,
+                ScreenKind::Browser,
+                ScreenKind::Power,
+                ScreenKind::Apps,
+                ScreenKind::OptionalApps,
+                ScreenKind::ChooseOne,
+                ScreenKind::Extras,
+            ] {
+                let (title, question) = (kind.title(), kind.question());
+                assert!(question.matches(title.as_str()).count() <= 1, "{kind:?}: {question}");
+            }
+        });
+    }
+
+    /// Edition advice names the editions the gate refuses, and gives only
+    /// examples the gate accepts (see `SystemInfo::supported_edition`).
+    #[test]
+    fn edition_advice_matches_the_edition_gate() {
+        let edition = |id: &str, installation: &str| {
+            SystemInfo { edition_id: id.into(), installation_type: installation.into(), ..Default::default() }
+                .supported_edition()
+        };
+        english(|| {
+            let host = CheckDetail::EditionUnsupported.text(&SystemInfo::default());
+            let iso = t!("iso-failed-edition");
+            for (name, id) in
+                [("Pro", "Professional"), ("Education", "Education"), ("Enterprise", "Enterprise")]
+            {
+                assert!(host.contains(name) && iso.contains(name), "{name} is not named");
+                assert!(edition(id, "Client"), "{id} is named as supported but refused");
+            }
+            for (name, id) in [("Home", "Core"), ("LTSC", "EnterpriseS")] {
+                assert!(host.contains(name) && iso.contains(name), "{name} is not named");
+                assert!(!edition(id, "Client"), "{id} is named as unsupported but accepted");
+            }
+            assert!(host.contains("Server") && !edition("ServerStandard", "Server"));
+        });
+    }
+
+    #[test]
+    fn check_details_keep_raw_diagnostics_and_identifiers_verbatim() {
+        english(|| {
+            let missing = CheckDetail::BuildUnsupported { supported: vec![], actual: 26200 };
+            assert_eq!(missing.text(&SystemInfo::default()), t!("detail-build-missing"));
+            let system = SystemInfo {
+                product_name: "Windows 11 Pro".into(),
+                display_version: "25H2".into(),
+                build: 26200,
+                revision: 1234,
+                ..Default::default()
+            };
+            assert!(system_description(&system).contains("26200.1234"));
+            // Build numbers are identifiers: never grouped like quantities.
+            let unsupported =
+                CheckDetail::BuildUnsupported { supported: vec![26100, 26200], actual: 22631 }.text(&system);
+            for build in ["26100", "26200", "22631"] {
+                assert!(unsupported.contains(build), "{unsupported}");
+            }
+            assert!(!unsupported.contains("22,631"), "{unsupported}");
+            let titles = vec!["KB1".into(), "KB2".into(), "KB3".into()];
+            let pending = CheckDetail::UpdatesPending { titles }.text(&system);
+            assert!(pending.contains("KB1; KB2") && !pending.contains("KB3"), "{pending}");
+            let error = "0x80240438: la conexión falló";
+            let unknown = CheckDetail::UpdatesUnknown { error: error.into() }.text(&system);
+            assert!(unknown.contains(error), "{unknown}");
+            let products = vec!["Avast".into(), "Norton".into()];
+            let found = CheckDetail::AntivirusFound { products: products.clone() }.text(&system);
+            assert!(found.contains(&join_list(&products)), "{found}");
+        });
+    }
+
+    /// Which advice an outcome gets. A retry of an install an earlier attempt
+    /// began applying must never say that nothing changed, however early it
+    /// stops.
+    #[test]
+    fn install_advice_follows_outcome_phase_and_resume() {
+        use InstallOutcome::{Failed, Lost, NotStarted};
+        let facts = |phase, resumed| AttemptFacts { phase, resumed, ..AttemptFacts::default() };
+        english(|| {
+            let table = [
+                (Failed(1), Phase::Preflight, false, "outcome-failed-preflight"),
+                (Failed(1), Phase::Staging, false, "outcome-failed-staging"),
+                (Failed(1), Phase::Applying, false, "outcome-failed-applying"),
+                (Failed(1), Phase::Applying, true, "outcome-failed-applying"),
+                (Failed(1), Phase::Preflight, true, "outcome-failed-resumed"),
+                (Failed(1), Phase::Staging, true, "outcome-failed-resumed"),
+                (NotStarted, Phase::Preflight, false, "outcome-not-started"),
+                (NotStarted, Phase::Preflight, true, "outcome-failed-resumed"),
+                (Failed(2), Phase::Preflight, false, "outcome-requirements"),
+                (Failed(2), Phase::Applying, false, "outcome-requirements"),
+                (Failed(2), Phase::Preflight, true, "outcome-requirements-resumed"),
+                (Failed(3), Phase::Preflight, false, "outcome-not-elevated"),
+                (Failed(3), Phase::Preflight, true, "outcome-not-elevated-resumed"),
+                (Failed(5), Phase::Staging, false, "outcome-preparation-stale"),
+                (Failed(5), Phase::Staging, true, "outcome-preparation-stale-resumed"),
+                (Lost, Phase::Preflight, true, "outcome-lost"),
+            ];
+            for (outcome, phase, resumed, id) in table {
+                assert_eq!(
+                    outcome.advice(&facts(phase, resumed)),
+                    crate::i18n::text(id, &[]),
+                    "{outcome:?} {phase:?} resumed: {resumed}"
+                );
+            }
+            // Out-of-date preparation sends the user back to Get ready, whose
+            // button then reads prepare-start; other failures don't.
+            let button = t!("prepare-start");
+            assert!(Failed(5).advice(&facts(Phase::Staging, false)).contains(&button));
+            assert!(Failed(5).advice(&facts(Phase::Staging, true)).contains(&button));
+            assert!(!Failed(1).advice(&facts(Phase::Staging, false)).contains(&button));
+            // An unconfirmed result is not called a failure.
+            assert_eq!(Lost.title(), t!("outcome-lost-title"));
+            assert_ne!(Lost.title(), Failed(1).title());
+            // An installer that never started didn't "finish": unless an earlier attempt changed things.
+            assert_eq!(NotStarted.heading(false), t!("preflight-title"));
+            assert_eq!(NotStarted.heading(true), t!("outcome-failed-title"));
+            assert_eq!(Failed(1).heading(false), t!("outcome-failed-title"));
+            // Neither names a button that may be unavailable.
+            for outcome in [NotStarted, Lost] {
+                assert!(!outcome.advice(&facts(Phase::Preflight, false)).contains(&t!("common-try-again")));
+            }
+            // A launch refused on a retry changed nothing itself, but an earlier attempt did.
+            let error = "the log could not be created";
+            let refused = Preflight::Refused { error: error.into() };
+            assert_eq!(refused.text(&SystemInfo::default(), false), t!("preflight-refused", error = error));
+            assert_eq!(
+                refused.text(&SystemInfo::default(), true),
+                t!("preflight-refused-resumed", error = error)
+            );
+        });
+    }
+
+    /// A retry that stops on the error the one before it stopped on doesn't
+    /// invite a third identical try: it names the apps Windows kept, when
+    /// that was the error, and points to a report. Outcomes with a remedy of
+    /// their own keep it.
+    #[test]
+    fn a_failure_that_repeats_points_to_a_report_and_names_the_apps_windows_kept() {
+        use InstallOutcome::Failed;
+        let repeated = |phase, apps: &[&str]| AttemptFacts {
+            phase,
+            resumed: true,
+            repeated: true,
+            unremoved_apps: apps.iter().map(|app| app.to_string()).collect(),
+            ..AttemptFacts::default()
+        };
+        english(|| {
+            let report = t!("report-title");
+            let general = Failed(1).advice(&repeated(Phase::Applying, &[]));
+            assert_eq!(general, t!("outcome-failed-repeated"));
+            let one = Failed(1).advice(&repeated(Phase::Applying, &["MSTeams"]));
+            assert_eq!(one, t!("outcome-failed-repeated-apps", apps = "MSTeams"));
+            let two = Failed(1).advice(&repeated(Phase::Applying, &["MSTeams", "Microsoft.Copilot"]));
+            assert!(two.contains("MSTeams and Microsoft.Copilot"), "{two}");
+            for advice in [&general, &one, &two] {
+                assert!(advice.contains(&report), "{advice}");
+                assert!(!advice.contains("You can try again"), "{advice}");
+                assert!(advice.contains("Windows Security"), "Defender is still there: {advice}");
+            }
+            // However early it stopped, the same error again is still a repeat.
+            assert_eq!(Failed(1).advice(&repeated(Phase::Staging, &[])), general);
+            // What a requirement, permission or preparation needs fixing is said as before.
+            assert_eq!(
+                Failed(2).advice(&repeated(Phase::Preflight, &[])),
+                t!("outcome-requirements-resumed")
+            );
+            assert_eq!(
+                Failed(3).advice(&repeated(Phase::Preflight, &[])),
+                t!("outcome-not-elevated-resumed")
+            );
+            assert_eq!(
+                Failed(5).advice(&repeated(Phase::Staging, &[])),
+                t!("outcome-preparation-stale-resumed")
+            );
+            // A failure that is not a repeat still invites a retry.
+            let first = AttemptFacts { repeated: false, ..repeated(Phase::Applying, &["MSTeams"]) };
+            assert_eq!(Failed(1).advice(&first), t!("outcome-failed-applying"));
+        });
+    }
+
+    /// Once Defender has no protections left to turn back on, no advice says
+    /// to turn them back on, whatever the outcome; while it has, a failure
+    /// that changed things does.
+    #[test]
+    fn no_advice_says_to_turn_protection_back_on_once_defender_is_removed() {
+        use InstallOutcome::{Failed, Lost, NotStarted, Succeeded};
+        english(|| {
+            let security = "Windows Security";
+            for outcome in [Succeeded, Failed(1), Failed(2), Failed(3), Failed(5), NotStarted, Lost] {
+                for phase in [Phase::Preflight, Phase::Staging, Phase::Applying, Phase::Done] {
+                    for (resumed, repeated, apps) in [
+                        (false, false, vec![]),
+                        (true, false, vec![]),
+                        (true, true, vec![]),
+                        (true, true, vec!["MSTeams".into()]),
+                    ] {
+                        let facts = AttemptFacts {
+                            phase,
+                            resumed,
+                            repeated,
+                            defender_removed: true,
+                            unremoved_apps: apps,
+                        };
+                        let advice = outcome.advice(&facts);
+                        assert!(!advice.contains(security), "{outcome:?} {facts:?}: {advice}");
+                    }
+                }
+            }
+            let removed = |phase, resumed| AttemptFacts {
+                phase,
+                resumed,
+                defender_removed: true,
+                ..AttemptFacts::default()
+            };
+            assert_eq!(
+                Failed(1).advice(&removed(Phase::Applying, false)),
+                t!("outcome-failed-applying-defender-removed")
+            );
+            assert_eq!(
+                Failed(1).advice(&removed(Phase::Staging, true)),
+                t!("outcome-failed-resumed-defender-removed")
+            );
+            assert_eq!(Lost.advice(&removed(Phase::Applying, true)), t!("outcome-lost-defender-removed"));
+            let repeated = AttemptFacts { repeated: true, ..removed(Phase::Applying, true) };
+            assert_eq!(Failed(1).advice(&repeated), t!("outcome-failed-repeated-defender-removed"));
+            let kept = AttemptFacts { unremoved_apps: vec!["MSTeams".into()], ..repeated };
+            assert_eq!(
+                Failed(1).advice(&kept),
+                t!("outcome-failed-repeated-apps-defender-removed", apps = "MSTeams")
+            );
+            // Each one that stops offering protections still says what to do.
+            for advice in [
+                t!("outcome-failed-applying-defender-removed"),
+                t!("outcome-failed-resumed-defender-removed"),
+                t!("outcome-lost-defender-removed"),
+            ] {
+                assert!(advice.contains(&t!("report-title")), "{advice}");
+            }
+            let present = AttemptFacts { phase: Phase::Applying, ..AttemptFacts::default() };
+            for outcome in [Failed(1), Lost] {
+                assert!(outcome.advice(&present).contains(security), "{outcome:?}");
+            }
+        });
+    }
+
+    #[test]
+    fn install_blocks_name_the_target_and_offer_no_file_to_a_tester_build() {
+        english(|| {
+            let unsupported = |target: Option<&str>| InstallBlock::Unsupported {
+                source: "0.4.0".into(),
+                target: target.map(str::to_owned),
+            };
+            assert!(unsupported(Some("0.6.0")).text(false).contains("0.6.0"));
+            assert!(!unsupported(None).text(false).contains("0.6.0"), "no target before a package is chosen");
+            let open = t!("package-open-file");
+            let resume = InstallBlock::ResumeOther { target: "0.6.1".into(), downloads: r"C:\D".into() };
+            assert!(resume.text(false).contains(&open) && resume.text(false).contains(r"C:\D"));
+            assert!(!resume.text(true).contains(&open), "a tester build can't open one");
+        });
+    }
+
+    #[test]
+    fn preparation_failures_get_the_most_specific_advice_available() {
+        english(|| {
+            let activity = |code: Option<&str>, reason: Option<&str>| Activity {
+                failure_message: Some("worker text".into()),
+                error_code: code.map(str::to_owned),
+                reason: reason.map(str::to_owned),
+                ..Activity::default()
+            };
+            // A provider code the app knows comes first.
+            let in_use = activity(Some(ERROR_PACKAGES_IN_USE), Some("store-timeout"));
+            assert_eq!(
+                preparation_failure(Some(&in_use), false),
+                t!("prepare-app-in-use", app = t!("prepare-affected-app"))
+            );
+            let busy = activity(Some(WU_E_INSTALL_NOT_ALLOWED), None);
+            assert_eq!(preparation_failure(Some(&busy), false), t!("prepare-install-busy"));
+            // A damaged component store, which can stop any update, even on a fresh install.
+            let damaged = activity(Some("0x80073712"), None);
+            assert!(component_store_damaged(&damaged));
+            assert_eq!(preparation_failure(Some(&damaged), false), t!("prepare-failed-component-store"));
+            // Damage Windows records and can't repair stops a run before any update.
+            let unrepairable = activity(None, Some(COMPONENT_STORE_UNREPAIRABLE));
+            assert!(component_store_damaged(&unrepairable));
+            assert_eq!(
+                preparation_failure(Some(&unrepairable), false),
+                t!("prepare-failed-component-store-unrepairable")
+            );
+            assert!(!component_store_damaged(&activity(Some("0x80070005"), Some("store-timeout"))));
+            let battery = activity(None, Some("store-paused-battery"));
+            assert_eq!(preparation_failure(Some(&battery), false), t!("prepare-failed-store-battery"));
+            let unknown = activity(Some("0x80070005"), Some("a-newer-cause"));
+            assert_eq!(preparation_failure(Some(&unknown), false), t!("prepare-failed"));
+            // A run that ended without a report is not described as a failure it cannot name.
+            assert_eq!(preparation_failure(None, false), t!("prepare-ended-unconfirmed"));
+            assert_eq!(preparation_failure(None, true), t!("prepare-failed"));
+        });
+    }
+
+    #[test]
+    fn every_cause_the_worker_names_has_its_own_advice() {
+        english(|| {
+            let worker = crate::services::preparation::WORKER;
+            // Calls that pass a literal message, then the cause.
+            let mut named: Vec<&str> = worker
+                .split("New-PreparationFailure ")
+                .skip(1)
+                .filter_map(|call| {
+                    let quote = call.chars().next().filter(|c| *c == '\'' || *c == '"')?;
+                    let message = &call[1..];
+                    let after = &message[message.find(quote)? + 1..];
+                    after.trim_start().strip_prefix('\'')?.split('\'').next()
+                })
+                .collect();
+            // The Store's own paused states, which the worker names apart from those calls.
+            let paused = ["store-paused-battery", "store-paused-network"];
+            for id in paused {
+                assert!(worker.contains(&format!("'{id}'")), "{id} is not named by the worker");
+            }
+            named.extend(paused);
+            assert!(named.len() >= 8, "{named:?}");
+            for id in named {
+                assert!(preparation_failure_reason(id).is_some(), "no advice for {id}");
+            }
+            assert_eq!(preparation_failure_reason("a-newer-cause"), None);
+            // Why the worker refused a connection.
+            for reason in ["limited", "metered", "offline", "roaming"] {
+                assert!(worker.contains(&format!("'{reason}'")), "{reason} is not named by the worker");
+            }
+            assert_eq!(preparation_network(Some("limited")), t!("prepare-network-limited"));
+            assert_eq!(preparation_network(Some("metered")), t!("prepare-network-metered"));
+            for reason in [None, Some("offline"), Some("roaming")] {
+                assert_eq!(preparation_network(reason), t!("prepare-network-needed"));
+            }
+        });
+    }
+
+    /// Every cause the update worker and its library name for a Windows
+    /// move has words of its own, with the facts it carries filled in.
+    #[test]
+    fn every_cause_a_windows_move_names_has_its_own_words() {
+        english(|| {
+            use crate::services::preparation::{LIBRARY, WORKER};
+            let mut named: Vec<&str> = [WORKER, LIBRARY]
+                .iter()
+                .flat_map(|source| source.split("New-VantaTransitionFailure ").skip(1))
+                .filter_map(|call| {
+                    let quote = call.chars().next().filter(|c| *c == '\'' || *c == '"')?;
+                    let message = &call[1..];
+                    let after = &message[message.find(quote)? + 1..];
+                    after.trim_start().strip_prefix('\'')?.split('\'').next()
+                })
+                .collect();
+            named.sort_unstable();
+            named.dedup();
+            assert!(named.len() >= 15, "{named:?}");
+            let words = TransitionWords { release: "26H2", current: "24H2", version: "0.6.0" };
+            let missing = join_list(&[t!("hardware-tpm"), t!("hardware-uefi")]);
+            let (release, current, version) =
+                (("release", "26H2"), ("current", "24H2"), ("version", "0.6.0"));
+            let setting = ("setting", "BITS");
+            let disk = [("needed", "46"), ("drive", "D:"), ("free", "13")];
+            // Each cause, the message it gets and the facts that message shows,
+            // so a cause given another's words, or a fact in the wrong place, fails.
+            type Expected<'a> = (&'a str, &'a str, &'a [(&'a str, &'a str)]);
+            let expected: &[Expected] = &[
+                ("feature-not-offered", "prepare-failed-feature-not-offered", &[release, current]),
+                ("feature-prerequisite", "prepare-failed-feature-not-offered", &[release, current]),
+                (
+                    "feature-hardware",
+                    "prepare-failed-feature-hardware",
+                    &[("missing", missing.as_str()), release, current, version],
+                ),
+                ("feature-hidden", "prepare-failed-feature-hidden", &[release]),
+                ("feature-disk-space", "prepare-failed-feature-disk-space", &disk),
+                ("feature-servicing", "prepare-failed-feature-servicing", &[]),
+                ("feature-managed", "prepare-failed-feature-managed", &[release]),
+                ("feature-policy", "prepare-failed-feature-policy", &[setting]),
+                ("feature-blocked", "prepare-failed-feature-blocked", &[setting]),
+                ("feature-rolled-back", "prepare-failed-feature-rolled-back", &[release, current]),
+                ("feature-components-lost", "prepare-failed-feature-components-lost", &[version]),
+                ("feature-build", "prepare-failed-feature-build", &[]),
+                ("feature-journal", "prepare-failed-feature-journal", &[]),
+                ("feature-pin", "prepare-failed-feature-pin", &[setting]),
+                ("feature-terms", "prepare-failed-feature-terms", &[release]),
+                ("feature-failed", "prepare-failed-feature-failed", &[release, current]),
+            ];
+            for id in named {
+                let activity = Activity {
+                    reason: Some(id.to_owned()),
+                    hardware: Some("tpm,uefi".into()),
+                    drive: Some("D:".into()),
+                    free_gb: Some("13".into()),
+                    needed_gb: Some("46".into()),
+                    setting: Some("BITS".into()),
+                    ..Activity::default()
+                };
+                // Only putting the settings back names this one.
+                if id == "feature-restore" {
+                    let error = format!("{id}: Atlas couldn't put back service.wuauserv.");
+                    assert_eq!(
+                        restore_failure(&error),
+                        t!("home-update-access-failed", error = error.as_str())
+                    );
+                    continue;
+                }
+                if id == "feature-install-active" {
+                    assert_eq!(
+                        restore_failure(&format!("{id}: unfinished")),
+                        t!("home-update-access-install-active")
+                    );
+                    continue;
+                }
+                let text =
+                    transition_failure(&activity, &words).unwrap_or_else(|| panic!("no words for {id}"));
+                let (_, message, facts) = expected
+                    .iter()
+                    .find(|(cause, ..)| *cause == id)
+                    .unwrap_or_else(|| panic!("{id} needs its expected words in this test"));
+                let args: Vec<(&str, crate::i18n::Arg)> =
+                    facts.iter().map(|(name, value)| (*name, (*value).into())).collect();
+                assert_eq!(text, crate::i18n::text(message, &args), "{id}");
+            }
+            assert_eq!(
+                transition_failure(
+                    &Activity { reason: Some("store-missing".into()), ..Activity::default() },
+                    &words
+                ),
+                None
+            );
+            assert!(
+                Activity { reason: Some("feature-prerequisite".into()), ..Activity::default() }.not_offered()
+            );
+            assert_eq!(restart_reason("feature-update"), t!("prepare-reason-feature-update"));
+        });
+    }
+
+    #[test]
+    fn only_the_update_scan_can_be_confirmed_by_hand() {
+        use crate::services::requirements::Verdict;
+        english(|| {
+            for id in CheckId::ALL {
+                for verdict in [Verdict::Pass, Verdict::Warn, Verdict::Fail, Verdict::Unknown] {
+                    let result = CheckResult { id, verdict, detail: CheckDetail::UpdatesNone };
+                    assert_eq!(
+                        result.acknowledgement().is_some(),
+                        id == CheckId::PendingUpdates && verdict == Verdict::Unknown,
+                        "{id:?} {verdict:?}"
+                    );
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn a_package_without_the_front_door_is_told_apart_by_its_version() {
+        english(|| {
+            let incomplete = AcquireProblem::Incomplete { version: "0.6.1".into() };
+            // A damaged new package doesn't get the advice for an old one.
+            let old = AcquireProblem::Unsupported { version: "0.6.1".into() };
+            assert_ne!(incomplete.text(false), old.text(false));
+            let retry = t!("common-try-again");
+            assert!(incomplete.text(true).contains(&retry), "a tester build offers only Try again");
+        });
+    }
+
+    /// A package for a newer Atlas Manager names the version it needs, when
+    /// it gives one, and points to the button that downloads it.
+    #[test]
+    fn a_package_for_a_newer_atlas_manager_names_the_version_and_the_download() {
+        english(|| {
+            let named = AcquireProblem::ManagerOutdated { required: Some("0.7.0".into()) };
+            let unnamed = AcquireProblem::ManagerOutdated { required: None };
+            let download = t!("manager-download");
+            for bundled in [false, true] {
+                assert!(named.text(bundled).contains("0.7.0"));
+                assert!(named.text(bundled).contains(&download));
+                assert!(unnamed.text(bundled).contains(&download));
+            }
+            assert_ne!(named.text(false), unnamed.text(false));
+        });
+    }
+
+    /// Every option and choice this app knows by id gets its own words in
+    /// every language, whatever the manifest's English says; one it doesn't
+    /// know shows the manifest's English.
+    #[test]
+    fn package_text_is_the_app_s_own_for_every_id_it_knows() {
+        let choice = |id: &str, description: &str| Choice {
+            id: id.into(),
+            kind: ChoiceKind::Multiple,
+            description: description.into(),
+            learn_more: None,
+            depends_on: None,
+            options: vec![ChoiceOption { id: "x".into(), label: "X".into(), image: None, default: false }],
+        };
+        english(|| {
+            let label = option_label("defender-disable", "Pause Defender");
+            assert_eq!(label, t!("package-option-defender-disable"));
+            assert_eq!(option_label("future-option", " New behaviour "), "New behaviour");
+            assert!(option_consequence("defender-disable").is_some());
+            assert_eq!(option_consequence("future-option"), None);
+            assert_eq!(
+                choice_description(&choice("defender", "Older words")),
+                Some(t!("package-choice-defender-description"))
+            );
+            assert_eq!(choice_description(&choice("future", " New words ")).as_deref(), Some("New words"));
+            assert_eq!(choice_description(&choice("future", "")), None);
+            assert_eq!(
+                choice_description(&choice("system", "")),
+                None,
+                "a known choice without a description"
+            );
+        });
+        crate::i18n::testing::with_chain(&["pl"], || {
+            let translated = option_label("defender-enable", "Keep Microsoft Defender (recommended)");
+            assert_ne!(translated, "Keep Microsoft Defender (recommended)");
+            assert!(!translated.is_empty());
+            assert_eq!(option_label("defender-enable", "Keep Defender on"), translated);
+            // An option this app does not know keeps the manifest's words.
+            assert_eq!(option_label("new-option", "Something new"), "Something new");
+            let described = choice_description(&choice("browser", "Choose a browser to install.")).unwrap();
+            assert_ne!(described, "Choose a browser to install.");
+        });
+    }
+    #[test]
+    fn the_consequence_table_covers_every_required_builtin_option() {
+        let manifest = crate::services::package::Manifest::builtin();
+        for choice in manifest
+            .choices
+            .iter()
+            .filter(|choice| choice.kind == ChoiceKind::Single && choice.depends_on.is_none())
+        {
+            for option in &choice.options {
+                assert!(option_consequence(&option.id).is_some(), "no consequence for {}", option.id);
+            }
+        }
+    }
+
+    /// Choosing again, an answer that changes this PC says what the update
+    /// does there, as its Choices step applies it; one that leaves the PC as
+    /// it is, or meets a record Atlas never wrote, says nothing new.
+    #[test]
+    fn choosing_again_says_what_an_answer_changes_on_this_pc() {
+        let line = change_line;
+        let records = |records: &[(&str, u32)]| Facts {
+            toggles: records.iter().map(|(name, state)| ((*name).to_owned(), *state)).collect(),
+            ..Facts::default()
+        };
+        let words = |id: &str| Some(crate::i18n::text(id, &[]));
+        english(|| {
+            let removed = Facts {
+                packages: vec!["Z-Vanta-NoDefender-Package~31bf3856ad364e35~amd64~~5.0.0.0".into()],
+                ..Facts::default()
+            };
+            assert_eq!(line("defender-enable", true, &removed), words("change-defender-enable"));
+            assert_eq!(line("defender-enable", true, &Facts::default()), None, "no Atlas package removed it");
+            assert_eq!(line("defender-disable", true, &removed), None);
+
+            let protections = |state| records(&[("Mitigations", state)]);
+            assert_eq!(
+                line("mitigations-default", true, &protections(0)),
+                words("change-mitigations-default")
+            );
+            assert_eq!(
+                line("mitigations-default", true, &protections(2)),
+                words("change-mitigations-all-on")
+            );
+            assert_eq!(line("mitigations-default", true, &protections(1)), None, "already Windows' default");
+            assert_eq!(
+                line("mitigations-default", true, &Facts::default()),
+                None,
+                "no record, nothing applied"
+            );
+            assert_eq!(line("mitigations-disable", true, &protections(2)), None);
+            let updates = |state| records(&[("AutomaticUpdates", state)]);
+            assert_eq!(line("auto-updates-default", true, &updates(0)), words("change-auto-updates-default"));
+            assert_eq!(line("auto-updates-default", true, &updates(1)), None);
+
+            // A box cleared over Atlas's record turns the feature back on;
+            // ticked, or with no record, it changes nothing.
+            for (name, toggle, message) in [
+                ("disable-hibernation", "Hibernation", "change-hibernation-on"),
+                ("disable-power-saving", "PowerSaving", "change-power-saving-on"),
+                ("disable-core-isolation", "VbsState", "change-core-isolation-on"),
+            ] {
+                let off = records(&[(toggle, 0)]);
+                assert_eq!(line(name, false, &off), words(message), "{name}");
+                assert_eq!(line(name, true, &off), None, "{name}");
+                assert_eq!(line(name, false, &records(&[(toggle, 1)])), None, "{name}");
+                assert_eq!(line(name, false, &Facts::default()), None, "{name}");
+            }
+            // VBS off whatever turned it off; on, whatever Atlas recorded.
+            let vbs =
+                |off, record: &[(&str, u32)]| Facts { core_isolation_off: Some(off), ..records(record) };
+            let on_again = words("change-core-isolation-on");
+            assert_eq!(line("disable-core-isolation", false, &vbs(true, &[])), on_again);
+            assert_eq!(line("disable-core-isolation", false, &vbs(true, &[("VbsState", 1)])), on_again);
+            assert_eq!(
+                line("disable-core-isolation", false, &vbs(false, &[("VbsState", 0)])),
+                None,
+                "already on"
+            );
+            assert_eq!(line("disable-core-isolation", true, &vbs(true, &[])), None);
+
+            // Removing Snipping Tool can't be undone, wherever it's still there.
+            let apps = |families: &[&str]| Facts {
+                appx: families.iter().map(|family| (*family).to_owned()).collect(),
+                ..Facts::default()
+            };
+            let present =
+                apps(&["Microsoft.ScreenSketch_8wekyb3d8bbwe", "Microsoft.WindowsCalculator_8wekyb3d8bbwe"]);
+            let gone = apps(&["Microsoft.WindowsCalculator_8wekyb3d8bbwe"]);
+            assert_eq!(line("remove-snipping-tool", true, &present), words("change-remove-snipping-tool"));
+            assert_eq!(
+                line("remove-snipping-tool", true, &Facts::default()),
+                words("change-remove-snipping-tool")
+            );
+            assert_eq!(line("remove-snipping-tool", true, &gone), None);
+            assert_eq!(line("remove-snipping-tool", false, &present), None);
+            assert_eq!(line("install-eclean", true, &present), None);
+        });
+    }
+
+    /// What an update can't undo says so, naming what is installed.
+    #[test]
+    fn a_fixed_choice_says_why_an_update_cannot_change_it() {
+        let manifest = crate::services::package::Manifest::builtin();
+        let label = |id: &str| option_label(id, manifest.option_label(id).unwrap());
+        english(|| {
+            assert_eq!(fixed_reason(&FixedChoice::EdgeRemoved, label), Some(t!("fixed-uninstall-edge")));
+            assert_eq!(
+                fixed_reason(&FixedChoice::Installed("install-toolbox".into()), label),
+                Some(t!("fixed-installed", app = "Atlas Toolbox"))
+            );
+            let brave = fixed_reason(&FixedChoice::Installed("browser-brave".into()), label).unwrap();
+            assert!(brave.starts_with("Brave is installed."), "{brave}");
+            assert_eq!(fixed_reason(&FixedChoice::Kept, label), None);
+        });
+    }
+
+    #[test]
+    fn lists_end_with_the_language_s_and() {
+        english(|| {
+            let names = |items: &[&str]| items.iter().map(|item| item.to_string()).collect::<Vec<_>>();
+            assert_eq!(join_and(&[]), "");
+            assert_eq!(join_and(&names(&["Tamper Protection"])), "Tamper Protection");
+            assert_eq!(join_and(&names(&["A", "B"])), "A and B");
+            assert_eq!(join_and(&names(&["A", "B", "C"])), "A, B and C");
+        });
+    }
+
+    #[test]
+    fn a_protection_reminder_names_only_the_switches_it_read() {
+        use crate::services::security::{Protection, SecurityStatus, Switch};
+        let reading = SecurityStatus {
+            tamper_protection: Switch::Off,
+            real_time_protection: Switch::On,
+            cloud_delivered: Switch::Off,
+            sample_submission: Switch::Unknown,
+            defender_present: true,
+        };
+        let reminder = |reason, status: &SecurityStatus| ProtectionReminder::from_reading(reason, status);
+        english(|| {
+            let kept = reminder(ReminderReason::KeptDefender, &reading).unwrap();
+            assert_eq!(kept.switches, [Protection::CloudDelivered, Protection::TamperProtection]);
+            let message = kept.message();
+            assert!(message.contains("Cloud-delivered protection and Tamper Protection"), "{message}");
+            assert!(message.contains("You kept Microsoft Defender"), "{message}");
+            assert!(!message.contains("Real-time") && !message.contains("sample"), "{message}");
+
+            let left = reminder(ReminderReason::LeftFlow, &reading).unwrap().message();
+            assert!(left.contains("Vanta isn't installing anything"), "{left}");
+            assert!(left.contains("Cloud-delivered protection and Tamper Protection"), "{left}");
+
+            // Nothing reads off: what couldn't be read is named, without claiming it is off.
+            let unread =
+                SecurityStatus { tamper_protection: Switch::On, cloud_delivered: Switch::Unknown, ..reading };
+            let soft = reminder(ReminderReason::KeptDefender, &unread).unwrap();
+            assert!(soft.unreadable);
+            let message = soft.message();
+            assert!(message.contains("couldn't read"), "{message}");
+            assert!(
+                message.contains("Cloud-delivered protection and Automatic sample submission"),
+                "{message}"
+            );
+            assert!(!message.contains("still off"), "{message}");
+        });
+        // Every switch on: nothing to remind about.
+        let on = SecurityStatus {
+            tamper_protection: Switch::On,
+            real_time_protection: Switch::On,
+            cloud_delivered: Switch::On,
+            sample_submission: Switch::On,
+            defender_present: true,
+        };
+        assert_eq!(reminder(ReminderReason::KeptDefender, &on), None);
+        // Defender gone: leaving a flow, nothing was turned off to turn back
+        // on; after an install that kept it, that it's missing.
+        let gone = SecurityStatus { defender_present: false, ..reading };
+        assert_eq!(reminder(ReminderReason::LeftFlow, &gone), None);
+        let missing = reminder(ReminderReason::KeptDefender, &gone).unwrap();
+        assert!(missing.missing && missing.switches.is_empty() && !missing.unreadable);
+        english(|| assert_eq!(missing.message(), t!("installed-defender-missing-message")));
+    }
+}

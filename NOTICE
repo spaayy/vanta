@@ -1,0 +1,27 @@
+Vanta
+Copyright (C) Vanta contributors.
+
+Vanta is free software, licensed under the GNU General Public License v3.0
+(see LICENSE). It comes with NO WARRANTY. The complete corresponding source
+code is available with every release, in the same place as the binaries:
+Vanta-<version>-source.zip, and Vanta-<version>-third-party-sources.zip for the
+GPL programs of others that the package carries (ViVe, Multi-Choice).
+Project: https://github.com/spaayy/vanta
+
+Vanta is based on AtlasOS 0.6.0 (https://github.com/Atlas-OS/Atlas),
+Copyright (C) the AtlasOS contributors, licensed under the GPL-3.0.
+Atlas and AtlasOS are names of their owners; Vanta is not affiliated with or
+endorsed by them.
+
+Interface fonts: Geist and Geist Mono, Copyright (c) Vercel, Inc., licensed
+under the SIL Open Font License 1.1 (https://github.com/vercel/geist-font).
+
+Vanta Manager is built with open-source Rust crates; their licences and
+notices are in THIRD-PARTY-NOTICES.txt. The programs and components in the
+Vanta package keep their own licences; see the binary inventory
+(package/Executables/VantaModules/README.md).
+
+Artes-base geradas com Google Flow; seleção, composição e acabamento pelo projeto Vanta.
+Origem e proveniência das artes: PROVENANCE.md.
+
+Vanta does not include Windows and does not change Windows activation.

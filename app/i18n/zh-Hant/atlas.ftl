@@ -1,0 +1,1299 @@
+### Vanta Manager: Chinese (Traditional) (zh-Hant), preview translation. Revised 1 October 2026 from the en-GB source (i18n/en-GB/atlas.ftl).
+###
+### Serves zh-TW, zh-HK and zh-MO. Terminology follows Microsoft's Taiwan
+### Windows glossary (設定, 系統管理員, 重新啟動, 檔案, 資料夾, 網路, 電腦).
+### Full-width punctuation; one space between Chinese and Latin words or
+### numbers. "重新開啟 Vanta" is reopening the app (and 重新開啟 also turns a
+### protection back on); "重新啟動" is only restarting the PC / Windows. Chinese has only the "other" plural
+### category; exact [1]/[2] variants are allowed.
+### The .vantapkg file is the "Vanta 套件" (套件 alone once that is clear); the
+### installation files card is 安裝檔案. Controls named in text are quoted
+### with 「」 using their exact label from this catalog.
+
+## Shared
+
+app-name = Vanta Manager
+common-done = 完成
+common-cancel = 取消
+common-back = 上一步
+common-next = 繼續
+common-dismiss = 關閉
+# Link beside a summary row that jumps back to change that choice.
+common-change = 變更
+common-copy = 複製
+# Shown where a list of options is empty.
+common-none = 無
+# Accessible name of the back arrow on the Install and Settings pages.
+common-back-to-home = 返回首頁
+# Accessible name of the gear button in the title bar.
+common-settings = 設定
+common-close-settings = 關閉設定
+common-open-windows-security = 開啟 Windows 安全性
+# Relaunches the Vanta Manager elevated (UAC), not the PC.
+common-restart-as-administrator = 以系統管理員身分重新開啟 Vanta
+common-try-again = 再試一次
+common-show-details = 顯示詳細資料
+common-hide-details = 隱藏詳細資料
+# Accessible name of a Show details or Hide details toggle. $action is common-show-details or
+# common-hide-details; $section is the title of the card it opens.
+common-details-a11y = { $action }，{ $section }
+common-open-log-file = 開啟記錄檔
+# Accessible name of the Copy button beside the install log.
+common-copy-install-log = 複製安裝記錄
+common-install-log = 安裝記錄
+# Row labels in summary cards.
+common-windows = Windows
+common-options = 選項
+common-package = 安裝檔案
+common-installed-as = 安裝類型
+common-installed = 已安裝
+common-checking = 檢查中
+# Joins two items in a list: "Brave、Firefox". The braces keep the literal.
+list-separator = { "、" }
+# Joins two alternatives: "26100 或 26200".
+list-or = { $a } 或 { $b }
+# Joins the last two items of a list: "竄改防護和雲端提供的保護".
+# $a may itself be several items joined with list-separator.
+list-and = { $a }和{ $b }
+# Accessible name of a message bar that announces itself: its title, then its message.
+infobar-a11y = { $title }。{ $message }
+
+## Window
+
+# Dialog shown when the window is closed while an install runs.
+window-close-title = 要在 Vanta 安裝期間關閉視窗嗎？
+window-close-message = 安裝會在背景繼續進行。再次開啟 Vanta 即可查看進度與結果。安裝完成前，請讓電腦保持開機。
+# Instead of window-close-message when the installation restarts the PC afterwards: only an
+# open Vanta window restarts it, so closing the window cancels that.
+window-close-message-restart = 安裝會在背景繼續進行，但 Vanta 關閉期間，電腦不會自動重新啟動。再次開啟 Vanta 即可查看進度與結果。安裝完成前，請讓電腦保持開機。
+# The safe answer in every dialog shown when the window is closed, including those for ISO
+# and USB creation, updates and Windows Update access.
+window-close-keep = 保持開啟
+window-close-close = 關閉視窗
+# Dialog shown when the window is closed during the final checks, before the
+# installer has started; window-close-keep and window-close-close are its buttons.
+window-close-preparing-title = 要在安裝開始前關閉視窗嗎？
+window-close-preparing-message = Vanta 仍在檢查您的電腦，尚未開始安裝。如果現在關閉，安裝將不會開始。再次開啟 Vanta 即可繼續。
+prepare-close-title = 更新仍在進行中
+# "Stop updating" is prepare-stop, the dialog's other button.
+prepare-close-message = 更新期間請保持 Vanta 開啟。如果您選擇「停止更新」，更新會在目前步驟完成後停止，屆時您就可以關閉 Vanta。
+# Dialog shown when the window is closed during the restart countdown after a
+# successful install. Its buttons are window-close-keep, restart-now and
+# window-close-restart-close.
+window-close-restart-title = 要關閉 Vanta 而不重新啟動嗎？
+# "Restart now" is restart-now, one of this dialog's three buttons.
+window-close-restart-message = 您的電腦需要重新啟動，才能完成 Vanta 設定。如果您現在關閉 Vanta，它不會重新啟動您的電腦，因此請在準備好後自行重新啟動。選擇「立即重新啟動」前，請先儲存您的工作。
+window-close-restart-close = 關閉但不重新啟動
+# Dialog shown when the window is closed during a setup with Windows Security switches still
+# off. $switches names them as Windows Security does, joined like a list. Its buttons are
+# window-close-keep, common-open-windows-security and window-close-close.
+window-close-protection-title = 要在防護關閉的狀態下關閉 Vanta 嗎？
+window-close-protection-message = Windows 安全性中仍有部分防護處於關閉狀態：{ $switches }。如果您不打算完成 Vanta 的安裝，請在關閉前重新開啟這些防護。如果您會完成安裝，再次開啟 Vanta 時，它會繼續您的設定。
+# The Open button of the file picker for an Vanta package (.vantapkg) file, on Get ready and the
+# ISO page. It's a button label, so keep it short.
+file-dialog-open-package = 開啟 Vanta 套件（.vantapkg）
+# Message Windows shows in its restart notification.
+shutdown-comment = Vanta 已安裝完成。Windows 即將重新啟動以完成設定。
+# Message Windows shows in its restart notification when "Get ready" restarts
+# to finish installing Windows updates.
+prepare-shutdown-comment = Vanta 正在重新啟動 Windows，以完成更新的安裝。
+
+## System
+
+# "Windows 11 Pro 25H2（組建 26200.1234）". All three values are text.
+system-description = { $product } { $version }（組建 { $build }）
+
+## Home page
+
+home-not-installed = 歡迎使用 Vanta
+# The headline when Vanta Manager can't tell what is installed on this PC.
+home-state-unknown = 這台電腦上的 Vanta
+# The headline when Vanta is installed. $version is text.
+home-version = Vanta { $version }
+# $date is a formatted date.
+home-installed-on = 安裝於 { $date }
+home-status-checking = 正在檢查更新
+# While startup checks whether another window's installation is running.
+home-status-recovering = 正在檢查是否有進行中的安裝
+home-status-offline = 無法檢查更新
+home-status-not-checked = 尚未檢查更新
+home-status-update = Vanta { $version } 已推出
+home-status-up-to-date = 已是最新版本
+home-status-newest = 最新版本：Vanta { $version }
+# An earlier installation of Vanta { $version } stopped before it finished.
+home-status-unfinished = Vanta { $version } 尚未安裝完成
+home-check-again = 再次檢查
+# Primary button while an install is running or waiting.
+home-show-install = 檢視進度
+home-continue-installing = 繼續設定
+home-update-to = 更新至 Vanta { $version }
+home-reinstall = 重新安裝 Vanta
+home-install = 安裝 Vanta
+home-finish-install = 完成安裝 Vanta { $version }
+home-start-over = 重新開始
+home-restart-title = 您的電腦需要重新啟動
+home-security-reminder-title = 請重新開啟防護
+# Instead of home-security-reminder-title when no switch reads off but some couldn't be read
+# (with home-security-reminder-unreadable-message).
+home-security-reminder-unreadable-title = 請確認防護已開啟
+home-security-reminder-message = Vanta 目前沒有在安裝任何項目，但 Windows 安全性中仍有部分防護處於關閉狀態。請開啟 Windows 安全性，並確認下列項目已開啟：{ $switches }。
+home-security-reminder-unreadable-message = Vanta 無法檢查所有防護開關。請在 Windows 安全性中確認下列項目已開啟：{ $switches }。
+home-elevation-title = Vanta 需要權限才能安裝
+home-state-error-title = 無法讀取 Vanta 的安裝資訊
+home-state-error-message = 您的 Vanta 版本、選擇和安裝歷程可能無法正確顯示。請選擇「再次檢查」重試。詳細資料：{ $error }
+home-whats-new = Vanta { $version } 的新功能
+home-view-release = 在 GitHub 檢視版本資訊
+home-released = 發行於 { $date }
+home-show-less = 顯示較少
+home-show-full-notes = 顯示完整版本資訊
+home-your-install = 您的 Vanta 設定
+# Vanta is installed, but without the record Vanta Manager keeps (older versions didn't write one).
+home-install-unrecorded = 這台電腦未記錄 Vanta 的安裝方式，因此無法顯示您的選擇與安裝歷程。
+home-history = 安裝歷程
+# One history row. $version is text, $mode one of the history-mode-* messages, $date a formatted date and time.
+home-history-entry = Vanta { $version } · { $mode } · { $date }
+home-how-it-works = 讓您的電腦為 Vanta 做好準備
+home-step-1-detail = Vanta 會檢查您的電腦、安裝等待中的 Windows 與 Microsoft Store 更新，並下載安裝檔案。市集應用程式可能會關閉，電腦也可能需要重新啟動，因此請先儲存您的工作。
+# Tester build: the Vanta package is bundled, nothing is downloaded.
+home-step-1-detail-bundled = Vanta 會檢查您的電腦、安裝等待中的 Windows 與 Microsoft Store 更新，並準備內建的安裝檔案。市集應用程式可能會關閉，電腦也可能需要重新啟動，因此請先儲存您的工作。
+home-step-2-detail = 選擇是否保留 Microsoft Defender 和處理器防護、Windows 要如何安裝更新，以及要加入哪些選用項目。
+home-step-3-detail = 關閉 Windows 安全性中的四個防護開關，以免它們阻擋安裝。Vanta 會告訴您怎麼做。
+home-step-4-detail = 安裝大約需要 { $minutes } 分鐘，之後您的電腦需要重新啟動。
+# Accessible name of a numbered step.
+home-step-a11y = 步驟 { $number }：{ $title }
+home-report-problem = 回報問題
+
+## How an install was done (from the state document)
+
+mode-fresh = 首次安裝
+mode-upgrade = 從舊版本更新
+mode-reapply = 重新安裝相同版本
+mode-unknown = 安裝
+# Forms used inside a history row.
+history-mode-fresh = 首次安裝
+history-mode-upgrade = 更新
+history-mode-reapply = 重新安裝
+history-mode-unknown = 安裝
+
+## Notices on the Home page
+
+notice-settings-reset-title = Vanta 正在使用預設的應用程式設定
+# $error is a raw error message (text).
+notice-settings-unreadable = Vanta 無法讀取已儲存的應用程式設定。您的 Windows 設定未受影響。詳細資料：{ $error }
+# $file is a file name (text).
+notice-settings-damaged-kept = 應用程式設定檔已損毀，並已重設為預設值。舊檔案已另存為 { $file }。詳細資料：{ $error }
+notice-settings-damaged = 應用程式設定檔已損毀。Vanta 目前使用預設值。詳細資料：{ $error }
+notice-settings-not-saved-title = 無法儲存應用程式設定
+# $error is a raw error message (text).
+notice-settings-not-saved = Vanta 無法儲存您最近的變更，關閉 Vanta 後這些變更可能會遺失。如果還開著另一個 Vanta 視窗，請將其關閉，然後重新進行變更。詳細資料：{ $error }
+notice-session-unreadable-title = 無法確認上次的安裝狀態
+# $path is a file path (text).
+notice-session-unreadable-message = Vanta 無法判斷先前的安裝是否仍在進行。如果您不確定，請向 Vanta 社群求助。只有在確定沒有安裝正在進行時，才可刪除 { $path } 並再試一次。詳細資料：{ $error }
+
+## Administrator elevation
+
+elevation-declined = 尚未取得權限。請再試一次，並在 Windows 詢問是否允許 Vanta 變更您的裝置時選擇「是」。
+elevation-declined-continue = 尚未取得權限。請再試一次，並在 Windows 詢問是否允許 Vanta 變更您的裝置時選擇「是」。您的設定選擇已儲存。
+elevation-draft-not-saved = Vanta 無法儲存您的設定選擇，因此尚未重新開啟。請再試一次。詳細資料：{ $error }
+# Shown with the home-start-over button.
+elevation-taken-over = 另一個 Vanta 視窗已接手這次設定，因此 Vanta 尚未重新開啟。請在該視窗中繼續，或選擇「重新開始」在這裡重新設定。
+
+## The install flow
+
+step-ready = 準備
+step-options = 您的選擇
+step-security = Windows 安全性
+step-install = 安裝
+install-title = 設定 Vanta
+# Accessible name of the row of steps.
+stepper-label = Vanta 設定步驟
+# Accessible name of one step. $status is one of the stepper-status-* messages.
+stepper-step-a11y = 第 { $number } 步，共 { $total } 步，{ $title }，{ $status }
+stepper-status-completed = 已完成
+stepper-status-current = 目前步驟
+stepper-status-upcoming = 尚未進行
+stepper-status-attention = 需要留意
+# Heading above each step's content.
+step-heading = 第 { $number } 步，共 { $total } 步：{ $title }
+# Accessible name of the step heading on a screen of Your choices, read when it takes focus.
+# $heading is step-heading; $progress is options-progress; $question is the screen's question.
+step-heading-choice-a11y = { $heading }。{ $progress }：{ $question }
+# The same on the optional extras screen; $progress is options-progress-extras.
+step-heading-extras-a11y = { $heading }。{ $progress }
+
+## Step 1: Get ready
+
+ready-banner-busy-title = 正在準備您的電腦
+ready-banner-busy-message = Vanta 正在檢查您的電腦並準備安裝檔案。
+ready-banner-blocked-title = 您的電腦尚未準備就緒
+ready-banner-blocked-message = 請處理「電腦檢查」中標示的項目，然後選擇「再次檢查」。
+ready-banner-no-package-title = 請先下載 Vanta
+ready-banner-no-package-message = 請在「安裝檔案」中下載 Vanta；如果您已有 Vanta 套件（.vantapkg），請選擇「開啟套件檔案」。
+# The package tried needs a newer Vanta Manager. The title is also the footer's hint then.
+ready-banner-manager-title = 請先下載較新版本的 Vanta Manager
+# "Download Vanta Manager" is manager-download, the button in Installation files (package-title).
+ready-banner-manager-message = 請在「安裝檔案」中選擇「下載 Vanta Manager」，然後改用新版本取代目前的版本。
+# Tester build: the bundled Vanta package couldn't be unpacked.
+ready-banner-no-package-bundled-title = 請準備內建的 Vanta 套件以繼續
+ready-banner-no-package-bundled-message = 此應用程式內建的 Vanta 套件尚未就緒。請查看「安裝檔案」卡片。
+ready-banner-updates-title = 請更新 Windows 和市集應用程式以繼續
+ready-banner-updates-message = 請選擇「檢查並安裝更新」。更新完成後，Vanta 會再次檢查您的電腦。
+# While Windows and Store apps update. "Update Windows and Store apps" is prepare-title, the
+# card further down the page.
+ready-banner-updating-title = 正在更新 Windows 和市集應用程式
+ready-banner-updating-message = 這可能需要一段時間。請保持 Vanta 開啟。您可以在「更新 Windows 和市集應用程式」中查看進度。
+# After Stop updating. "Check and install updates" is prepare-start, the card's button.
+ready-banner-updates-stopped-title = 更新已停止
+ready-banner-updates-stopped-message = 請在「更新 Windows 和市集應用程式」中選擇「檢查並安裝更新」，以完成更新。
+# Vanta reopened after restarting the PC to continue updating. "Continue updates" is
+# prepare-continue, the card's button.
+ready-banner-updates-resumed-title = 您的電腦已重新啟動
+ready-banner-updates-resumed-message = 請在「更新 Windows 和市集應用程式」中選擇「繼續更新」，以完成更新。
+# Under prepare-failed-title or prepare-unconfirmed-title. "Try again" is common-try-again,
+# the card's button.
+ready-banner-updates-failed-message = 請查看「更新 Windows 和市集應用程式」中的處理方式，然後選擇「再試一次」。
+# Under prepare-reboot-title. "Restart and continue" is prepare-restart, the card's button.
+ready-banner-reboot-message = 請先儲存您的工作，然後在「更新 Windows 和市集應用程式」中選擇「重新啟動並繼續」。
+ready-banner-warnings-title = 有幾點需要留意
+ready-banner-warnings-message = 您可以繼續，但請先閱讀「電腦檢查」中標示的項目。
+ready-banner-ok-title = 準備就緒，可以開始進行選擇了
+ready-banner-ok-message = 檢查已通過，安裝檔案也已就緒。
+
+# Card title and accessible name of the list of checks.
+ready-this-pc = 電腦檢查
+ready-check-again = 再次檢查
+ready-checks-passed = 已通過 { $count } 項檢查
+
+package-title = 安裝檔案
+# $received and $total are formatted numbers of megabytes (text).
+package-downloading = 正在下載 Vanta { $version } · { $received } / { $total } MB
+package-unpacking-progress = 正在解壓縮 · { $done } / { $total } 個檔案
+package-unpacking = 正在解壓縮
+package-looking = 正在查詢最新的 Vanta 版本。
+# Tester build: the bundled Vanta package is being unpacked, nothing is downloaded.
+package-looking-bundled = 正在準備內建的 Vanta 套件。
+package-none = 請下載 Vanta 以取得安裝檔案。如果您已有 Vanta 套件（.vantapkg），也可以直接開啟它。
+# The GitHub release check failed. "Download latest version" is package-download-newest,
+# the button offered in this state; it checks again.
+package-release-failed = Vanta 無法查詢最新版本。請檢查網際網路連線，然後選擇「下載最新版本」，或開啟已儲存的 Vanta 套件（.vantapkg）。
+# Short status words beside the card title.
+package-status-downloading = 下載中
+package-status-unpacking = 解壓縮中
+package-status-failed = 無法準備檔案
+package-status-ready = 就緒
+package-status-checking = 檢查中
+package-status-preparing = 準備中
+package-status-missing = 尚未下載
+# Accessible name of the progress bar.
+package-progress = 安裝檔案準備進度
+package-download-again = 重新下載
+package-download-version = 下載 Vanta { $version }
+package-download-newest = 下載最新版本
+package-cancel-download = 取消下載
+package-open-file = 開啟套件檔案
+# Where the package came from. $file is a file name (text).
+package-from-release = 已從 GitHub 下載 Vanta { $version }，可以安裝。
+package-from-file = 已從 { $file } 載入 Vanta { $version }，可以安裝。
+package-unpacked = Vanta { $version } 已可安裝。
+package-none-yet = 尚未選擇安裝檔案
+acquire-no-asset = Vanta { $version } 沒有可下載的套件檔案。請開啟已儲存的 Vanta 套件（.vantapkg）以繼續。
+# Shown for a package older than Vanta 0.6.0, and for a file that isn't an Vanta package, such as an
+# .apbx file from an Vanta release before 0.6.
+acquire-unsupported = 這個應用程式可透過 Vanta 套件（.vantapkg）安裝 Vanta 0.6.0 及更新版本。
+# A package new enough to include the installer script that this app drives, but without it.
+acquire-incomplete = Vanta { $version } 缺少這個應用程式進行安裝所需的檔案。請重新下載，或開啟其他 Vanta 套件（.vantapkg）。
+acquire-failed = 無法準備安裝檔案。請重新下載，或開啟其他 Vanta 套件（.vantapkg）。詳細資料：{ $error }
+# The download received nothing for a minute and was stopped.
+acquire-stalled = 下載已停止回應。請檢查網際網路連線，然後重新下載，或開啟已儲存的 Vanta 套件（.vantapkg）。
+# Tester build: the bundled Vanta package couldn't be unpacked. Try again is the only control offered.
+acquire-failed-bundled = 無法準備內建的 Vanta 套件。請選擇「再試一次」。詳細資料：{ $error }
+# The Vanta package asks for a newer Vanta Manager than this one. $version is the version it asks for,
+# such as 0.7.0. "Download Vanta Manager" is manager-download, the button beside the message.
+acquire-manager-outdated = 此 Vanta 套件需要 Vanta Manager { $version } 或更新版本。請選擇「下載 Vanta Manager」，然後改用新版本取代目前的版本。
+# The same, for a package that doesn't say which version it needs.
+acquire-manager-outdated-any = 此 Vanta 套件需要較新版本的 Vanta Manager。請選擇「下載 Vanta Manager」，然後改用新版本取代目前的版本。
+
+## Newer Vanta Manager
+
+# Opens the latest Vanta release on GitHub in the browser, where Vanta Manager is downloaded.
+manager-download = 下載 Vanta Manager
+# A note on Home and in Settings that a newer Vanta Manager has been released. $version is its
+# version, such as 0.7.0. The note doesn't stop anything; manager-download is its button.
+manager-update-title = Vanta Manager { $version } 已推出
+manager-update-message = Vanta Manager 無法自行更新。請下載新版本，並以它取代目前的版本。
+
+## System checks
+
+check-administrator = 安裝權限
+check-supported-build = Windows 相容性
+check-pending-updates = Windows 更新
+check-pending-reboot = 待處理的重新啟動
+check-third-party-antivirus = 其他防毒軟體
+check-internet = 網際網路連線
+check-power = 電源
+check-activation = Windows 啟用
+# Accessible name of a check row. $state is one of the check-state-* messages.
+check-a11y = { $title }：{ $state }
+check-state-checking = 檢查中
+check-state-passed = 已通過
+check-state-warning = 需要留意
+check-state-failed-blocking = 安裝前需要處理
+check-state-failed = 需要留意
+check-state-unknown = 無法檢查
+check-fix-windows-update = 開啟 Windows Update
+check-fix-network = 開啟網路設定
+check-fix-power = 開啟電源設定
+check-fix-activation = 開啟「啟用」設定
+check-fix-apps = 開啟「已安裝的應用程式」
+# Check box the user ticks when the Windows Update scan could not run.
+check-ack-updates = 我已查看 Windows Update，沒有等待安裝的更新
+
+detail-admin-ok = Vanta 已具備進行安裝變更所需的權限。
+detail-admin-missing = 請以系統管理員身分重新開啟 Vanta，並在 Windows 要求權限時選擇「是」。
+# $builds is a list of build numbers such as "26100 或 26200"; $build is this PC's (text).
+detail-build-unsupported = 這個 Vanta 版本需要 Windows 組建 { $builds }，而這台電腦的組建為 { $build }。請先安裝支援的 Windows 版本再繼續。
+detail-build-missing = 這個 Vanta 套件未列出任何支援的 Windows 組建。請使用完整組建的套件，而非 LocalTest 組建。
+detail-updates-none = 沒有等待安裝的 Windows 更新。
+# $titles lists up to two update names (text); $count is the total.
+detail-updates-pending =
+    { $count ->
+        [1] 這個更新正在等待安裝：{ $titles }。Vanta 會在「更新 Windows 和市集應用程式」中安裝此更新。
+        [2] 這些更新正在等待安裝：{ $titles }。Vanta 會在「更新 Windows 和市集應用程式」中安裝這些更新。
+       *[other] 有 { $count } 個更新正在等待安裝，包括 { $titles }。Vanta 會在「更新 Windows 和市集應用程式」中安裝這些更新。
+    }
+detail-updates-unknown = 無法檢查 Windows 更新。請開啟 Windows Update 查看；如果沒有等待安裝的更新，請在下方確認。（{ $error }）
+detail-reboot-none = Windows 目前不需要重新啟動。
+detail-reboot-pending = Windows 需要重新啟動，才能完成先前的變更。當您選擇「檢查並安裝更新」時，Vanta 會先請您重新啟動。
+# $reasons: the pending-restart markers Windows set, from the prepare-reason-* names.
+detail-reboot-pending-reasons = Windows 需要重新啟動，才能完成先前的變更（{ $reasons }）。當您選擇「檢查並安裝更新」時，Vanta 會先請您重新啟動。
+# Warning, not a block: $files lists up to three file paths Windows will replace or remove at the next restart.
+detail-reboot-file-renames = 您可以繼續。Windows 有檔案要在下次重新啟動時取代或移除（{ $files }）。部分應用程式（例如 Xbox Gaming Services）每次重新啟動後都會如此。
+detail-reboot-unknown = 無法確認 Windows 是否需要重新啟動。請重新啟動電腦，然後重新開啟 Vanta 並再次檢查。（{ $error }）
+detail-antivirus-none = 未偵測到其他防毒軟體。
+# $products is a list of product names (text).
+detail-antivirus-found = Microsoft Defender 以外的防毒應用程式可能會阻擋安裝。請解除安裝 { $products }，然後選擇「再次檢查」。
+# Warning, not a block: Security Center still lists the product but its files are gone.
+detail-antivirus-stale = Windows 安全性仍列出 { $products }，但其檔案已不存在，因此它已不再安裝於電腦上。Vanta 仍可繼續安裝。
+detail-antivirus-unknown = 無法檢查是否有其他防毒軟體。請選擇「再次檢查」。如果持續失敗，請重新啟動電腦後再次檢查。（{ $error }）
+detail-internet-ok = 已連線。Vanta 下載並安裝軟體期間，請保持網路連線。
+detail-internet-missing = 請連線到網際網路，然後再次檢查。
+detail-power-mains = 電腦已接上電源。安裝完成前請保持連接。
+detail-power-battery = 請將電腦接上電源，讓它在整個安裝期間保持開機。
+detail-power-unknown = Vanta 無法判斷您的電腦是否已接上電源。如果是筆記型電腦，請接上電源，然後選擇「再次檢查」。如果持續發生這種情況，請選擇「傳送報告」。
+detail-activation-ok = Windows 已啟用。Vanta 不會變更啟用狀態。
+detail-activation-missing = Windows 尚未啟用。您可以繼續，但 Vanta 不會為您啟用 Windows。
+detail-activation-no-licence = Windows 未回報授權。您可以繼續；Vanta 不會變更您的啟用狀態。
+detail-activation-unknown = 無法檢查 Windows 啟用狀態。您可以繼續；Vanta 不會變更您的啟用狀態。（{ $error }）
+
+## Step 2: Options
+
+options-progress = 第 { $number } 項選擇，共 { $total } 項
+options-progress-extras = 第 { $number } 項選擇，共 { $total } 項：選用項目
+options-change-later = 您之後可以從桌面上的 Vanta 資料夾變更 Microsoft Defender、處理器防護和更新設定。
+# Short names for each decision (summary rows) and the question each screen asks.
+screen-defender-title = Microsoft Defender
+screen-defender-question = 要保留 Microsoft Defender 嗎？
+screen-mitigations-title = 處理器防護
+screen-mitigations-question = 要保留 Windows 的處理器防護嗎？
+screen-updates-title = Windows Update
+screen-updates-question = Windows 該如何安裝更新？
+screen-browser-title = 瀏覽器
+screen-power-title = 電源與安全性
+screen-apps-title = 應用程式
+screen-optional-apps-title = 選用應用程式
+screen-choose-one-title = 選擇一個選項
+screen-extras-title = 選用項目
+# Question for a required choice this app has no specific wording for.
+screen-generic-question = 請為「{ $title }」選擇一個選項
+learn-more-defender = 深入了解 Microsoft Defender
+learn-more-mitigations = 深入了解處理器防護
+learn-more-updates = 深入了解 Windows Update
+learn-more-browser = 深入了解瀏覽器
+learn-more-power = 深入了解電源與安全性
+learn-more-apps = 深入了解應用程式
+learn-more-eclean = eclean 如何與 Vanta 搭配使用
+learn-more-generic = 閱讀設定指南
+# One line under the chosen answer: what it means for the PC.
+consequence-defender-enable = 保留 Windows 內建的防毒軟體，協助保護電腦免受病毒與其他威脅。
+consequence-defender-disable = 同時會移除 SmartScreen。在您安裝其他防毒應用程式之前，電腦將沒有任何防毒保護，而且在您開啟無法辨識的應用程式或下載的檔案前，Windows 也不會警告您。
+consequence-mitigations-default = 保留 Windows 的預設防護，抵禦處理器漏洞，以及利用應用程式錯誤的攻擊。
+consequence-mitigations-disable = 同時會關閉應用程式的「惡意探索保護」，例如控制流程防護（CFG）。這會降低安全性。效能差異視您的處理器而定。
+consequence-auto-updates-disable = 請定期開啟 Windows Update 安裝更新。更新通知仍會顯示。
+consequence-auto-updates-default = Windows 會自動安裝更新，包括安全性修正。
+
+## Vanta package text
+## Labels and descriptions for the Vanta package's options and choices, by
+## their ids in the package's vanta.json. The app shows these in place of the
+## package's own English text; an option or choice that a newer package adds,
+## which has no message here, shows the package's English.
+
+package-option-defender-enable = 保留 Microsoft Defender
+package-option-defender-disable = 移除 Microsoft Defender
+package-option-mitigations-default = 保留處理器防護
+package-option-mitigations-disable = 關閉處理器防護
+package-option-auto-updates-disable = 自行安裝更新
+package-option-auto-updates-default = 自動安裝更新
+package-option-disable-hibernation = 關閉休眠
+
+package-option-disable-phishing-protection = Turn off Enhanced Phishing Protection (Windows stops warning when you type your password into a known phishing site)
+package-option-disable-gamebar = Turn off Game Bar and game capture
+package-option-remove-store = Remove the Microsoft Store (App Installer and winget stay)
+package-option-vanta-power = Use the Vanta power plan (desktop PCs only; skipped on laptops)
+package-option-vanta-memory = Use the Vanta memory profile (memory compression on, page combining and app pre-launch off)
+package-option-tools-on-logon = Open Vanta Tools the next time I sign in
+package-option-disable-power-saving = 關閉省電功能
+package-option-disable-core-isolation = 關閉虛擬化型安全性（VBS）
+package-option-remove-snipping-tool = 移除剪取工具
+package-option-uninstall-edge = 移除 Microsoft Edge
+package-option-install-another-browser = 安裝瀏覽器
+package-option-install-eclean = 安裝 eclean
+package-option-browser-brave = Brave
+package-option-browser-librewolf = LibreWolf
+package-option-browser-firefox = Firefox
+package-option-browser-chrome = Chrome
+package-choice-defender-description = Microsoft Defender 是 Windows 內建的防毒軟體。只有在您了解風險，並打算使用其他防毒應用程式時，才移除它。無論您選擇哪一項，Vanta 都會關閉「智慧型應用程式控制」、「增強式網路釣魚保護」和「尋找我的裝置」。
+
+package-choice-protections-description = Windows protections that stay on unless you turn them off. Nothing here is turned off by default.
+package-choice-vanta-description = Vanta extras. All are off unless you tick them.
+package-choice-mitigations-description = 這些防護（也稱為安全性緩和措施）有助於抵禦 Spectre 和 Meltdown 等處理器漏洞，以及利用應用程式錯誤的攻擊。建議保留 Windows 的預設值。
+package-choice-auto-updates-description = 選擇 Vanta 安裝完成後 Windows 更新的安裝方式（不同於事先準備此電腦的步驟 1）。您可以讓 Windows 自動安裝更新，或由您自行安裝。無論哪種方式，Vanta 都會將 Windows 維持在目前版本，並在 Microsoft 結束支援前接收安全性修正。Vanta 也會關閉 Microsoft Store 應用程式的自動更新，請在 Microsoft Store 中更新它們。
+package-choice-browser-description = 選擇要安裝的瀏覽器。Vanta 不會變更您的瀏覽器設定。
+
+## Step 3: Windows Security
+
+security-banner-reading-title = 正在檢查 Windows 安全性
+security-banner-reading-message = Vanta 正在檢查下方的四個防護開關。
+security-banner-off-title = 四個防護開關都已關閉
+# Shown instead of the switch list when Microsoft Defender isn't on this PC and the user
+# chose to remove it.
+security-banner-absent-title = 這台電腦未安裝 Microsoft Defender
+security-banner-absent-message = 此步驟沒有需要關閉的項目。請選擇「繼續」。
+security-banner-off-message = 請選擇「繼續」以檢視您的設定並安裝 Vanta。
+security-banner-on-title = 請在 Windows 安全性中關閉防毒保護
+security-banner-on-message = Microsoft Defender 可能會阻擋 Vanta 進行的變更。請選擇「開啟 Windows 安全性」，並關閉下方列出的每個開關。如果您保留 Microsoft Defender，請在安裝完成後重新開啟這些開關。
+# The page name in Windows Security.
+security-list-title = 病毒與威脅防護設定
+security-switch-off = 關閉
+security-switch-on = 開啟
+security-switch-unreadable = 無法檢查
+security-switch-reading = 檢查中
+security-all-off = 全部關閉
+# Accessible name of a switch row. $state is one of the security-switch-* messages.
+security-a11y = { $title }：{ $state }
+# Parts of the summary "2 個仍開啟，1 個無法檢查".
+security-count-still-on = { $count } 個仍開啟
+security-count-unreadable = { $count } 個無法檢查
+security-count-join = { $a }，{ $b }
+security-unknown-title = 請確認 Vanta 無法檢查的開關
+security-unknown-message = 請在 Windows 安全性中檢查四個開關都已關閉，然後在下方確認。
+security-acknowledge = 我已檢查 Windows 安全性，四個開關都已關閉
+security-unknown-unelevated-title = Vanta 需要權限才能檢查防護狀態
+security-unknown-unelevated-message = 請以系統管理員身分重新開啟 Vanta，才能檢查 Microsoft Defender 的設定。
+# The four switches, named as Windows Security names them in Traditional Chinese.
+protection-tamper = 竄改防護
+protection-tamper-why = 關閉此項，以免 Defender 阻止 Vanta 變更其安全性設定。
+protection-realtime = 即時保護
+protection-realtime-why = 關閉此項，以免 Defender 在掃描時阻擋 Vanta 的安裝檔案。
+protection-cloud = 雲端提供的保護
+protection-cloud-why = 關閉此項，以免線上威脅檢查阻擋 Vanta 的安裝檔案。
+protection-samples = 自動提交範例
+protection-samples-why = 避免 Defender 自動將 Vanta 的檔案傳送給 Microsoft 分析。
+
+## Step 4: Install
+
+# Accessible name of the progress bar.
+install-progress = 安裝進度
+# The installation's progress shown beside the bar. $percent is a whole number from 0 to 99.
+install-percent = { $percent }%
+outcome-succeeded-title = Vanta 已安裝完成
+outcome-lost-title = 無法確認安裝結果
+outcome-failed-title = 安裝未完成
+outcome-requirements = 您的電腦不符合安裝需求。未進行任何安裝變更。請返回「準備」重新執行檢查。
+# The -resumed variants follow a retry of an installation an earlier attempt had already started applying.
+outcome-requirements-resumed = 您的電腦不符合安裝需求，因此這次嘗試已停止。先前的嘗試已開始進行變更。請返回「準備」重新執行檢查。
+outcome-not-elevated = Vanta 沒有系統管理員權限。未進行任何安裝變更。請以系統管理員身分重新開啟 Vanta，然後再試一次。
+outcome-not-elevated-resumed = Vanta 沒有系統管理員權限，因此這次嘗試已停止。先前的嘗試已開始進行變更。請以系統管理員身分重新開啟 Vanta，然後再試一次。
+# The installer's live check found Windows or Store updates unfinished. Get ready offers the
+# update check again; "Check and install updates" is prepare-start, its button in that state.
+outcome-preparation-stale = Vanta 無法確認 Windows 和市集應用程式都已更新，因此安裝在變更 Windows 前已停止。請返回「準備」並選擇「檢查並安裝更新」。
+outcome-preparation-stale-resumed = Vanta 無法確認 Windows 和市集應用程式都已更新，因此這次嘗試已停止，但先前的嘗試已開始進行變更。請返回「準備」並選擇「檢查並安裝更新」。
+outcome-failed-preflight = 安裝在進行任何變更前已停止。您可以再試一次。如果再次停止，請選擇「傳送報告」。
+outcome-failed-staging = 安裝在準備檔案時停止，尚未變更 Windows。您可以再試一次。如果再次停止，請選擇「傳送報告」。
+outcome-failed-applying = 部分變更可能已經生效。您可以再試一次。如果您要就此停止，請在 Windows 安全性中重新開啟先前關閉的防護（如果它們仍然存在）。
+outcome-failed-applying-defender-removed = 部分變更可能已經生效。您可以再試一次。如果安裝再次停止，請選擇「傳送報告」。
+outcome-failed-resumed = 這次嘗試提早停止，但先前的嘗試已開始進行變更。您可以再試一次。如果您要就此停止，請在 Windows 安全性中重新開啟先前關閉的防護（如果它們仍然存在）。
+outcome-failed-resumed-defender-removed = 這次嘗試提早停止，但先前的嘗試已開始進行變更。您可以再試一次。如果安裝再次停止，請選擇「傳送報告」。
+outcome-failed-repeated = 這次嘗試因與上次相同的錯誤而停止，部分變更可能已經生效。不做任何調整就再試一次，很可能還是無濟於事。請選擇「傳送報告」，讓 Vanta 團隊找出原因。如果您要就此停止，請在 Windows 安全性中重新開啟先前關閉的防護（如果它們仍然存在）。
+outcome-failed-repeated-defender-removed = 這次嘗試因與上次相同的錯誤而停止，部分變更可能已經生效。不做任何調整就再試一次，很可能還是無濟於事。請選擇「傳送報告」，讓 Vanta 團隊找出原因。
+outcome-failed-repeated-apps = Windows 仍未移除 { $apps }，因此這次嘗試因與上次相同的錯誤而停止。部分變更可能已經生效。不做任何調整就再試一次，很可能還是無濟於事。請選擇「傳送報告」，讓 Vanta 團隊找出原因。如果您要就此停止，請在 Windows 安全性中重新開啟先前關閉的防護（如果它們仍然存在）。
+outcome-failed-repeated-apps-defender-removed = Windows 仍未移除 { $apps }，因此這次嘗試因與上次相同的錯誤而停止。部分變更可能已經生效。不做任何調整就再試一次，很可能還是無濟於事。請選擇「傳送報告」，讓 Vanta 團隊找出原因。
+outcome-not-started = 安裝程式未能及時啟動。未進行任何安裝變更。您可以再試一次。
+outcome-lost = 安裝程式在回報結果前就已停止，部分變更可能已經生效。您可以再試一次。如果您要就此停止，請在 Windows 安全性中重新開啟先前關閉的防護（如果它們仍然存在）。
+outcome-lost-defender-removed = 安裝程式在回報結果前就已停止，部分變更可能已經生效。您可以再試一次。如果再次停止，請選擇「傳送報告」。
+restart-now-message = Windows 正在重新啟動，以完成 Vanta 設定。
+restart-countdown = Windows 將在 { $seconds } 秒後重新啟動，以完成 Vanta 設定。若要先儲存您的工作，請選擇「稍後重新啟動」。
+restart-stopped = 已取消自動重新啟動。請儲存您的工作，然後重新啟動電腦以完成 Vanta 設定。
+restart-needed = 請儲存您的工作，然後重新啟動電腦以完成 Vanta 設定。
+restart-dont-now = 稍後重新啟動
+restart-now = 立即重新啟動
+restart-start-failed = Vanta 無法重新啟動您的電腦。請儲存您的工作，然後從「開始」功能表重新啟動。詳細資料：{ $error }
+preflight-title = 安裝尚未開始
+preflight-invalid-options = Vanta 無法使用這些設定選擇。請返回「您的選擇」重新檢視，然後再試一次。詳細資料：{ $error }
+# $problems is a sentence or two built from preflight-problem and preflight-security.
+preflight-changed = 您的電腦狀態在先前檢查後已有變化。請先解決下列問題，再試一次。{ $problems }
+preflight-problem = { $title }：{ $detail }
+# $summary is the Windows Security summary such as "2 個仍開啟".
+preflight-security = Windows 安全性：{ $summary }。
+preflight-busy = 另一個 Vanta 視窗正在開始安裝。請稍候片刻，然後再次選擇「安裝 Vanta」。
+# Shown with the home-start-over button.
+preflight-taken-over = 另一個 Vanta 視窗已接手這次設定，因此安裝尚未開始。請在該視窗中繼續，或選擇「重新開始」在這裡重新設定。
+preflight-record-unreadable = Vanta 無法確認上次的安裝是否仍在進行，因此沒有開始新的安裝。請返回「準備」查看後續步驟。詳細資料：{ $error }
+preflight-refused = 無法啟動安裝程式。未進行任何安裝變更。請選擇「安裝 Vanta」再試一次。如果持續發生，請選擇「傳送報告」。詳細資料：{ $error }
+# Instead of preflight-refused when retrying an installation an earlier attempt had already started applying.
+preflight-refused-resumed = 無法啟動安裝程式，因此這次嘗試已停止。先前的嘗試已開始進行變更。請選擇「安裝 Vanta」再試一次。如果持續發生，請選擇「傳送報告」。詳細資料：{ $error }
+go-to-ready = 返回「準備」
+go-to-options = 返回「您的選擇」
+# Replaces Continue on a choice opened from a Change link on the Install step, while Continue leads straight back there.
+go-to-install = 返回「安裝」
+output-problem-title = 無法讀取安裝進度
+output-problem-message = Vanta 無法讀取記錄，但這不代表安裝已停止。請讓電腦保持開機，並嘗試開啟記錄檔。詳細資料：{ $error }
+install-elevate-title = Vanta 需要權限才能安裝
+install-no-package-title = 請先選擇安裝檔案
+install-no-package-message = 請返回「準備」下載 Vanta，或開啟已儲存的 Vanta 套件（.vantapkg）。
+# Tester build variant of install-no-package-message.
+install-no-package-bundled-message = 請返回「準備」，準備此應用程式內建的 Vanta 套件。
+# Step 4 when step 1 is incomplete for this session (checks or Windows updates), with go-to-ready as the button.
+install-not-ready-title = 請先完成「準備」
+install-not-ready-message = Vanta 需要先完成電腦檢查和 Windows 更新，才能開始安裝。
+install-security-title = 安裝前請檢查防毒保護
+install-security-reading = 正在再次檢查四個防護開關。
+install-security-message = { $summary }。安裝之前，請開啟 Windows 安全性並確認四個開關都已關閉。
+summary-try-again = 再試一次前請先檢視設定
+summary-ready = 檢視您的 Vanta 設定
+summary-activation = 啟用
+summary-activation-ok = 已啟用。Vanta 不會變更啟用狀態。
+summary-activation-missing = 尚未啟用。您可以繼續，但 Vanta 不會啟用 Windows。
+summary-activation-unknown = Vanta 不會變更您的 Windows 啟用狀態。
+summary-duration = 預估時間
+summary-duration-value = { $minutes } 分鐘，然後重新啟動
+summary-restart-checkbox = 安裝完成後自動重新啟動電腦
+summary-show-command = 顯示安裝命令
+summary-hide-command = 隱藏安裝命令
+summary-copy-command-a11y = 複製安裝命令
+summary-command-unavailable = 無法準備安裝命令。詳細資料：{ $error }
+summary-not-chosen = 尚未選擇
+# Accessible name of a Change link. $title is a screen-*-title message.
+summary-change-a11y = 變更「{ $title }」
+footer-still-checking = 正在準備安裝
+footer-fix-items = 請先處理「電腦檢查」中的項目再繼續
+footer-need-package = 請下載 Vanta 或開啟 Vanta 套件以繼續
+# Tester build variant of footer-need-package.
+footer-need-package-bundled = 請準備內建的 Vanta 套件以繼續
+footer-reading-security = 正在檢查防護開關
+footer-security-pending = 請關閉全部四個開關以繼續
+footer-security-confirm = 若要繼續，請確認 Vanta 無法檢查的開關
+footer-install-ready = 請先儲存您的工作並關閉應用程式
+button-install = 安裝 Vanta
+log-earlier-lines = 記錄檔中另有較早的 { $count } 行。
+# Appended when the log is copied. $path is a file path (text).
+log-full-log-note = （完整記錄：{ $path }）
+
+## The installing view
+
+installing-checking-title = 最後一次檢查
+installing-checking-line = 進行變更之前，Vanta 正在檢查您的電腦。這可能需要一點時間。
+installing-title = 正在安裝 Vanta
+installing-phase-preflight = 正在檢查電腦並準備安裝檔案。
+installing-phase-staging = 正在準備安裝檔案。請讓電腦保持開機。
+installing-phase-applying = 正在依您的選擇設定 Windows。請讓電腦保持開機並接上電源。
+installing-phase-done = 正在完成安裝。請讓電腦保持開機。
+installing-installed-title = Vanta 已安裝完成
+# $time is a formatted clock time.
+installing-started-just-now = 開始於 { $time }（不到一分鐘前）
+installing-started-minutes = 開始於 { $time }（{ $minutes } 分鐘前）
+installing-restart-auto = 安裝完成後，電腦會自動重新啟動。請在那之前儲存您在其他應用程式中的工作。
+
+## The "Vanta is installed" window after the restart
+
+installed-title-version = Vanta { $version } 已安裝完成
+installed-title = Vanta 已安裝完成
+installed-ready = 一切就緒，您的電腦已可搭配 Vanta 使用。
+installed-security-message = 您保留了 Microsoft Defender，但它的部分防護仍處於關閉狀態。請開啟 Windows 安全性，並確認下列項目已開啟：{ $switches }。
+installed-defender-removed-title = 已移除 Microsoft Defender
+installed-defender-removed-message = 在您安裝其他防毒應用程式之前，電腦將沒有任何防毒保護。SmartScreen 也已一併移除，因此在您開啟無法辨識的應用程式或下載的檔案前，Windows 不會警告您。
+# Home and the "Vanta is installed" window, after an installation that kept Microsoft Defender,
+# when it is missing and no Vanta package removed it. Its title is security-banner-missing-title;
+# "Report a problem" is home-report-problem, its button.
+installed-defender-missing-message = 您選擇了保留 Microsoft Defender，但目前找不到它，而且它不是 Vanta 移除的。如果您沒有使用其他防毒應用程式，請安裝一個來保護您的電腦。如果不是您自行移除 Defender，請選擇「回報問題」。
+
+## Settings
+
+settings-title = 設定
+settings-theme = 應用程式佈景主題
+settings-theme-system = 與 Windows 一致
+settings-theme-light = 淺色
+settings-theme-dark = 深色
+settings-theme-contrast-note = Vanta 正在使用您的 Windows 對比佈景主題色彩。
+settings-theme-mica-note = 若要顯示半透明背景，請選擇與 Windows 相同的淺色或深色佈景主題。
+settings-language = 語言
+settings-language-system = 與 Windows 一致
+settings-language-system-selected = { settings-language-system }（{ $language }）
+# Under "與 Windows 一致": which language that gives. $language is a language's own name.
+settings-language-system-detail = 選擇「與 Windows 一致」時：{ $language }
+# A short tag under each language that is translated but not yet reviewed by a native speaker.
+settings-language-preview-tag = 預覽版
+# Under the language list, once, explaining the Preview tag.
+settings-language-preview-note = 預覽版翻譯尚未經過母語人士審閱。
+preview-notice = { $language }是預覽版翻譯，可能含有錯誤。
+preview-notice-switch = 切換為英文
+preview-notice-language = 變更語言
+# $tag is a language tag (text).
+settings-language-unavailable = 這個版本的 Vanta 沒有 { $tag }。目前顯示英文，您的語言選擇已保留。
+# $languages is the Windows display-language list (text).
+settings-language-windows-unmatched = Vanta 尚未支援您的 Windows 顯示語言（{ $languages }）。目前顯示英文。
+settings-language-windows-unavailable = 無法檢查您的 Windows 顯示語言。目前顯示英文。詳細資料：{ $error }
+# $locale is the regional format's own name, for example "中文 (台灣)".
+settings-language-formats = 數字、日期與時間會依照您的 Windows 地區格式（{ $locale }）顯示。
+# Instead of settings-language-formats when the regional format writes dates or times
+# right to left. $locale is the format's English name, for example "Arabic (Saudi Arabia)".
+settings-language-formats-numbers-only = 數字會依照您的 Windows 地區格式（{ $locale }）顯示。由於 Vanta 尚無法顯示由右至左的文字，日期與時間會使用標準格式。
+settings-language-contribute = 在 GitHub 協助翻譯 Vanta
+settings-usage-analytics = 與 Vanta 分享造訪的頁面、ISO 建立情形及安裝結果
+settings-restart-label = 安裝完成後自動重新啟動電腦
+settings-restart-locked = 安裝完成後才能變更這項設定。
+settings-restart-description = 開啟此設定後，電腦會在安裝完成後 10 秒內重新啟動，並關閉所有已開啟的應用程式。請在安裝前儲存您的工作。
+settings-help = 說明與意見反應
+settings-about = 關於
+settings-about-app = Vanta Manager
+settings-about-version = 版本
+settings-about-licence = 授權
+settings-about-licence-value = Vanta © 貢獻者，GPL-3.0
+settings-about-gpl-link = 閱讀 GPL-3.0 授權
+settings-about-based-on = 基於
+settings-about-based-on-value = 基於 AtlasOS 0.6.0 (GPL-3.0)
+settings-about-atlas-link = GitHub 上的 AtlasOS
+settings-about-fonts = 字型
+settings-about-fonts-value = Geist 與 Geist Mono (OFL-1.1，Vercel)
+settings-about-fonts-link = Geist OFL-1.1 授權
+settings-about-source = 原始碼
+# $version is the Vanta release version (text).
+settings-about-source-value = 完整對應的原始碼隨每個發行版本附帶於 Vanta-{ $version }-source.zip 與 Vanta-{ $version }-third-party-sources.zip。
+settings-about-source-link = GitHub 儲存庫
+settings-about-releases-link = GitHub 發行版本
+settings-about-network = 網路
+settings-about-network-value = Vanta 僅查詢 api.github.com 以取得 winget 資訊清單與版本，不會傳送個人資料。
+# Link that opens the third-party licence notices.
+settings-view-licences = 開啟 THIRD-PARTY-NOTICES.txt
+# Under the links when Windows could not open the notices.
+settings-licences-failed = 無法開啟 THIRD-PARTY-NOTICES.txt。請再試一次，或在授權資料夾中查看。
+settings-open-data-folder = 開啟應用程式資料夾
+
+## Optional choices: explanations shown before selection.
+
+consequence-disable-hibernation = 釋放休眠時用來儲存工作狀態的磁碟空間。休眠與快速啟動將無法使用。
+consequence-disable-power-saving = 關閉省電功能。電腦可能耗電更多、溫度更高，電池續航力也可能縮短。
+consequence-disable-core-isolation = 關閉 Windows 的一層額外安全防護，包括記憶體完整性。這會降低防護，也可能影響需要這項功能的應用程式或遊戲。
+consequence-remove-snipping-tool = 移除用來擷取螢幕畫面與錄製螢幕的 Windows 應用程式。
+consequence-uninstall-edge = 移除 Microsoft Edge 瀏覽器。請確認您已有其他瀏覽器，或在下方選擇一個。
+# Instead of consequence-uninstall-edge when Vanta is installed on this PC, which has the
+# user's Edge data. "choose one below" refers to the browser choice under it.
+consequence-uninstall-edge-data = 移除 Microsoft Edge，並刪除這台電腦上 Edge 的「我的最愛」、歷程記錄和已儲存的密碼。未同步到 Microsoft 帳戶的資料都會遺失。請確認您已有其他瀏覽器，或在下方選擇一個。
+# Under Remove Microsoft Edge in the Install step's summary, with a caution glyph.
+caution-uninstall-edge = 會刪除這台電腦上 Edge 的「我的最愛」、歷程記錄和已儲存的密碼。
+consequence-install-another-browser = 在下方選擇瀏覽器，Vanta 會為您安裝。
+consequence-install-toolbox = 加入 Vanta Toolbox，協助您管理 Vanta 設定。Toolbox 仍在測試階段，部分功能可能尚未完成。
+consequence-install-eclean = Vanta 團隊打造的維護工具，協助您在設定完成後保持電腦整潔。檢查垃圾檔案和啟動應用程式。需要帳戶和網際網路連線。
+
+# Introduction on the home page before Vanta is installed.
+home-intro = Vanta 會調整 Windows，減少背景活動與干擾。請在全新安裝 Windows 後、加入您自己的應用程式和檔案之前安裝 Vanta。
+
+## ISO creation
+iso-home-title = Windows 安裝媒體
+iso-home-description = 建立包含 Vanta 的 Windows 安裝檔（ISO），然後用它在這台電腦或其他電腦上重新安裝 Windows。
+iso-open = 建立 Vanta ISO
+iso-title = 建立 Vanta ISO
+iso-recommended = 建議
+iso-admin-description = Vanta 需要系統管理員權限，才能讀取您的 Windows ISO 並建立新的 ISO。請選擇「以系統管理員身分重新開啟 Vanta」，然後在 Windows 詢問時選擇「是」。
+iso-source = Windows ISO
+iso-download-recommended = 從微軟下載（建議）
+iso-source-question = 你想從哪裡取得 Windows？
+iso-use-local = 選擇 ISO 檔案
+iso-package-latest-label = 最新版
+iso-package-latest = 最新的 Vanta 套件
+iso-package-unavailable = 請選擇適用於此版本 Manager 的 Vanta 套件。
+iso-save-name = 另存為 { $name }
+iso-source-download = 從 Microsoft 下載 Windows 11
+iso-download-arch = 架構
+iso-download-languages = 正在載入語言…
+iso-download-list-error = 無法載入 Windows 語言清單。請再試一次，或從微軟網站下載 ISO。
+iso-download-file-error = 無法儲存 ISO。請檢查網路連線與可用空間，再以新的檔案名稱重試。
+iso-download-website = 開啟微軟下載頁面
+iso-download-progress = 正在下載 Windows · { $received } / { $total }
+iso-download-starting = 正在準備下載 Windows…
+iso-output = 新 ISO 的儲存位置
+iso-no-file = 尚未選取檔案
+# Accessible name of the Browse or Save as button beside a file field: $action is
+# that button's text and $field the field's label.
+iso-pick-a11y = { $action }：{ $field }
+iso-inspect = 檢查檔案
+iso-mode-title = 您要如何設定 Vanta？
+iso-mode-interactive = 登入後進行 Vanta 選擇
+iso-mode-interactive-description = 登入後，Vanta 會開啟並引導您完成更新、進行選擇並安裝 Vanta。
+iso-mode-before = 立即進行 Vanta 選擇
+iso-mode-before-description = Vanta 會將您的選擇儲存至 ISO。登入後，Vanta 會開啟並引導您完成更新，接著您就能依這些選擇安裝 Vanta。
+iso-package-unsupported-title = 請選擇較新的 Vanta 套件
+# "Make Vanta choices after sign-in" is iso-mode-interactive.
+iso-package-unsupported = 此 Vanta 套件無法將 Vanta 選擇儲存至 ISO。請選擇較新的套件，或選擇「登入後進行 Vanta 選擇」。
+# Shown when Check files refuses the Vanta package; $minimum as for iso-package.
+iso-failed-package-unsupported = 此 Vanta 套件無法用來建立 ISO。請選擇適用於 Vanta { $minimum } 或更新版本的套件。
+# Tester build: the bundled Vanta package cannot be swapped, so the only way on is the after-sign-in mode.
+iso-package-unsupported-bundled-title = 無法將 Vanta 選擇儲存至此 ISO
+# "Make Vanta choices after sign-in" is iso-mode-interactive.
+iso-package-unsupported-bundled = 此應用程式內建的 Vanta 套件不支援 ISO 設定。請改為選擇「登入後進行 Vanta 選擇」。
+iso-atlas-options = Vanta 選擇
+iso-review = 檢閱 ISO 設定
+iso-review-description = 建立 ISO 不會在這台電腦上安裝任何項目，也不會變更您的原始 ISO。完成後，Vanta 可以將新 ISO 寫入 USB 磁碟機，讓您用它重新安裝 Windows。
+iso-review-files = 檔案
+iso-step-windows = Windows 安裝
+iso-step-review = 檢閱
+iso-review-package = Vanta 套件
+iso-review-output = 新 ISO
+iso-review-editions = 版本
+iso-edition = Windows 版本
+iso-edition-auto = 在安裝 Windows 時選擇
+iso-accept-terms = 我接受 Windows 的 Microsoft 軟體授權條款
+iso-architecture-x64 = x64
+iso-architecture-arm64 = Arm64
+# A file size; $size is a formatted number (text). Megabytes below a gigabyte.
+size-megabytes = { $size } MB
+size-gigabytes = { $size } GB
+iso-review-account = 帳戶名稱
+iso-review-target = 安裝到
+iso-review-drivers = 驅動程式
+iso-create = 建立 ISO
+iso-progress-title = 正在建立您的 ISO
+iso-stage-inspect = 正在檢查您的 Windows ISO
+iso-stage-copy = 正在複製 Windows 檔案
+iso-stage-add-atlas = 正在加入 Vanta
+iso-stage-master = 正在寫入 ISO 檔案
+iso-stage-verify = 正在檢查新 ISO
+iso-stage-cleanup = 正在完成最後步驟
+# Accessible name of one stage while the ISO is created. No "Step": the screen reader adds
+# "4 of 6". $status is stepper-status-completed or one of the three below.
+iso-stage-a11y = { $title }，{ $status }
+iso-stage-status-current = 進行中
+# The stage where creating the ISO stopped with an error.
+iso-stage-status-failed = 失敗
+iso-stage-status-not-started = 尚未開始
+iso-progress-description = 請保持 Vanta 開啟。處理大型映像可能需要一些時間。
+iso-cancel = 取消建立
+iso-cancelling = 正在等待可安全取消的時機
+iso-cancelled = 已取消建立 ISO
+iso-cancelled-description = 您的原始 ISO 沒有任何變更。如果有遺留的暫存檔案，請選擇「開啟記錄資料夾」查看它們的位置。
+iso-complete = ISO 已準備就緒
+iso-complete-description = 接著選擇「建立安裝隨身碟」，並在重新安裝 Windows 前備份您的檔案。
+iso-open-folder = 在資料夾中顯示
+iso-failed = 無法完成 ISO 建立
+iso-failed-description = 請確認您的檔案仍在選取的位置，且要儲存到的磁碟機仍已連接，然後選擇「建立 ISO」。如果持續失敗，請選擇「傳送報告」。
+# Title while the Check files step fails; the messages below say why.
+iso-check-failed = 無法檢查檔案
+iso-check-failed-description = 請確認 ISO 和 Vanta 套件仍在您選取的位置，且已下載完成，然後選擇「檢查檔案」。如果持續失敗，請選擇「傳送報告」。
+# Title of the bar that asks for administrator permission. Its message is iso-admin-description,
+# or elevation-declined after Windows refused the relaunch (UAC declined).
+iso-elevation-title = Vanta 需要權限才能建立 ISO
+# Typed reasons reported by the image worker.
+iso-failed-output-exists = 已有相同名稱的檔案。請選擇「另存新檔」並輸入新的檔名。
+iso-failed-destination = Vanta 無法將新 ISO 儲存在該位置。請選擇「另存新檔」，並選取這台電腦上的資料夾，例如「下載」。網路位置以及格式化為 FAT32 或 exFAT 的磁碟機（許多 USB 磁碟機都是如此）都無法使用。
+iso-failed-space = 目的地磁碟機的可用空間不足。請釋放空間，或將新 ISO 儲存到其他磁碟機。
+# Home and LTSC are the editions ISO creation drops; the others are examples it keeps.
+iso-failed-edition = 此 ISO 不包含支援的 Windows 版本。不支援 Windows Home 與 LTSC。請使用包含其他版本（例如 Pro、Education 或 Enterprise）的 ISO。
+iso-failed-customised = 此 ISO 已包含自訂安裝檔案（例如 autounattend.xml）。請選擇 Microsoft 提供、未經修改的 Windows ISO。
+iso-failed-windows-unsupported = Vanta 套件不支援此 Windows 映像。請使用未經修改的 64 位元 Windows 11 ISO，且版本須為此套件所支援。
+iso-failed-network-architecture = 這台電腦的網路驅動程式與此 ISO 的架構不符。請返回並取消勾選「包含這台電腦的網路驅動程式」，或選擇適用於這台電腦的 ISO。
+iso-failed-unstaged = Vanta 無法準備其工作資料夾，因此沒有進行任何變更。請再試一次。如果仍然失敗，請選擇「匯出診斷資訊」並附在錯誤報告中。
+iso-failed-package-changed = 檢查檔案後，Vanta 套件已變更。請選擇「檔案」旁的「變更」，然後選擇「檢查檔案」。
+iso-diagnostics = 開啟記錄資料夾
+iso-close-title = ISO 仍在建立中
+iso-close-message = 請保持此視窗開啟，直到建立或取消完成。取消作業會等待目前步驟可以安全停止後再執行。
+# On the ISO and USB pages while Vanta updates Windows, or puts back Windows Update settings,
+# from another page. Their controls are unavailable until it finishes.
+iso-locked = Vanta 正在處理 Windows Update。完成後即可在此繼續。
+prepare-title = 更新 Windows 和市集應用程式
+prepare-description = 安裝之前，Vanta 會更新 Windows、Microsoft Store 和您的市集應用程式。已開啟的市集應用程式（例如記事本、小畫家或 Windows 終端機）可能會在更新時關閉，因此請先儲存您在其中的工作。電腦也可能需要重新啟動。
+prepare-complete = Vanta 沒有找到其他需要安裝的 Windows 或市集應用程式更新。
+prepare-reboot-title = 請重新啟動電腦以繼續
+prepare-reboot = 您的電腦需要重新啟動，才能完成更新的安裝。Vanta 會儲存您目前的選擇，並在您登入後重新開啟。
+# $reasons: the pending-restart markers Windows set, from the prepare-reason-* names.
+prepare-reboot-reasons = 您的電腦需要重新啟動，才能完成更新的安裝（{ $reasons }）。Vanta 會儲存您目前的選擇，並在您登入後重新開啟。
+# Under the restart message: the button restarts Windows without a countdown.
+prepare-reboot-save-work = 請先儲存您的工作並關閉應用程式。選擇「重新啟動並繼續」後，電腦會立即重新啟動。
+# Shown instead of another restart when Windows asks for one again right after restarting.
+prepare-restart-persists = 電腦已重新啟動，但 Windows 仍表示需要重新啟動（{ $reasons }），因此再次重新啟動可能沒有幫助。請選擇「開啟 Windows Update」並完成其中所有等待中的項目，然後選擇「再試一次」。如果沒有等待中的項目，請選擇「傳送報告」。
+# Names of the markers Windows sets when it wants a restart. They complete
+# "Your PC needs to restart to finish installing updates (…)"; keep them short and lower
+# case where the language allows.
+prepare-reason-servicing = Windows 元件服務
+prepare-reason-windows-update = Windows Update
+prepare-reason-file-renames = 等待取代的檔案
+prepare-reason-update-agent = Windows Update 服務
+prepare-reason-unknown = 未回報原因
+prepare-failed = 請選擇「再試一次」。如果再次失敗，請在 Windows Update 或 Microsoft Store 中完成其餘的更新，或選擇「傳送報告」。
+prepare-failed-title = 部分更新無法完成
+# The update run ended without writing any result, for example after Vanta was closed
+# while it ran. "Try again" is common-try-again, the button beside it.
+prepare-ended-unconfirmed = 更新在回報結果前就已停止，因此 Vanta 無法確認 Windows 和市集應用程式都已更新。請選擇「再試一次」檢查更新。
+prepare-unconfirmed-title = 無法確認更新結果
+# "Check and install updates" is prepare-start, its button in this state.
+prepare-cancelled = 更新已停止。部分更新可能已經安裝。請選擇「檢查並安裝更新」完成更新後再繼續。
+prepare-windows-search = 正在檢查 Windows 更新…
+prepare-windows-download = 正在下載 Windows 更新…
+prepare-windows-install = 正在安裝 Windows 更新…
+prepare-windows-repair = 正在先修復 Windows。Windows 回報有可能導致更新無法安裝的損毀。這可能需要半小時或更久。
+prepare-store-search = 正在檢查 Microsoft Store…
+prepare-store-install = 正在更新 Microsoft Store 及其應用程式…
+prepare-stop-description = Vanta 會在目前步驟完成後停止。在那之前，請保持 Vanta 開啟。
+prepare-stop = 停止更新
+prepare-restart = 重新啟動並繼續
+prepare-start = 檢查並安裝更新
+# Under the preparation button while it is unavailable. $check is the check-supported-build title.
+prepare-blocked-source = 由於此安裝無法繼續，目前無法使用。請查看頁面頂端的訊息。
+prepare-needs-build-check = 待「電腦檢查」中的「{ $check }」通過後即可使用。
+# Under the preparation button, and under the Administrator check, while the installation files are still downloading or unpacking.
+prepare-wait-for-package = 安裝檔案就緒後即可使用。
+iso-username = 本機帳戶名稱
+iso-account-description = Windows 安裝程式會以此名稱建立本機帳戶，因此您不需要 Microsoft 帳戶。第一次登入時，Windows 會請您設定密碼。
+iso-username-placeholder = 您的名字
+iso-account-empty = 請輸入本機帳戶名稱以繼續
+iso-account-invalid = 最多可使用 20 個字元，開頭和結尾不能有空格，也不能包含下列任何符號：" / \ [ ] : ; | = , + * ? < > @
+iso-account-trailing-dot = 名稱不能以句點「.」結尾。
+iso-account-reserved = Windows 已將此名稱用於內建帳戶。請選擇其他名稱。
+iso-terms-in-setup = Windows 安裝程式會請你接受授權條款。
+iso-privacy-defaults = 此 ISO 會略過 Windows 安裝程式中的Microsoft 帳戶和隱私權畫面，並關閉選用的資料分享和個人化優惠。
+prepare-drivers = 要如何安裝驅動程式？
+prepare-drivers-auto = 透過 Windows Update 取得驅動程式
+prepare-drivers-auto-detail = Windows 會為硬體尋找驅動程式。建議大多數電腦使用。
+prepare-drivers-manual = 自行安裝驅動程式
+prepare-drivers-manual-detail = Windows Update 不會安裝驅動程式，因此您需要向電腦或裝置製造商取得驅動程式。已安裝的驅動程式會保留。
+prepare-drivers-description = 驅動程式讓 Windows 能使用您的硬體，例如顯示卡、音效和 Wi-Fi。如果您在更新後變更此設定，Vanta 需要再次檢查更新。
+prepare-network-needed = 更新需要未設為計量付費的網際網路連線。請連線至 Wi-Fi 或乙太網路，然後選擇「再試一次」。如果看不到任何 Wi-Fi 網路，請先安裝網路驅動程式。
+# Connected, but Windows found no internet access (a captive portal, or DNS or firewall filtering).
+prepare-network-limited = Windows 回報此網路無法存取網際網路。如果網路要求登入，請先登入；或檢查路由器以及任何 DNS 或防火牆篩選，然後再試一次。
+# "Metered connection" is the switch's name in Windows network settings.
+prepare-network-metered = 此連線為計量付費連線，或設有資料使用量限制。請連線至未設為計量付費的網路，或在網路設定中關閉「計量付費連線」，然後再試一次。
+prepare-network-settings = 開啟網路設定
+iso-target-title = 要在哪台電腦上重新安裝 Windows？
+iso-target-this = 這台電腦
+# Under This PC (iso-target-this), before it's chosen.
+iso-target-this-description = Vanta 可以將這台電腦的 Wi-Fi 和乙太網路驅動程式加入 ISO，讓 Windows 重新安裝後就能立即連上網路。
+iso-target-other = 另一台電腦
+iso-copy-network = 包含這台電腦的網路驅動程式
+iso-network-detail = 安裝 Windows 時沿用這台電腦的 Wi-Fi 和乙太網路驅動程式。重灌後需要重新連線至 Wi-Fi。
+iso-network-source = 網路驅動程式來源
+iso-network-installed = 使用已安裝的驅動程式
+iso-network-updated = 先檢查 Windows Update
+iso-network-updated-detail = 下載 Windows Update 提供的相符驅動程式，並保留已安裝的驅動程式作為備用。需要非計量付費的連線。
+iso-stage-network-drivers = 正在準備網路驅動程式
+iso-network-failed = 無法準備網路驅動程式。請查看診斷資訊，或返回並變更網路驅動程式選項。
+# Under iso-complete when Include this PC's network drivers was chosen but the adapters use
+# drivers that come with Windows, so none were added.
+iso-network-inbox = 這台電腦的網路介面卡使用 Windows 內建的驅動程式，因此 ISO 不需要包含這些驅動程式。
+iso-mode-desktop = 進入桌面前完成設定
+iso-mode-desktop-description = Vanta 會將您的選擇儲存至 ISO。登入後，Vanta 會在 Windows 桌面開啟前完成更新與安裝。
+desktop-setup-description = 請完成電腦設定。您的 Vanta 選擇已儲存，需要時可以返回 Windows。
+desktop-setup-exit = 在 Windows 中繼續
+
+# Windows installation USB
+usb-title = 建立安裝隨身碟
+usb-existing = 使用現有 ISO 建立隨身碟
+usb-description = 將 ISO 寫入 USB 磁碟機，以便用它重新安裝 Windows。使用 Vanta 建立的 ISO，即可同時安裝 Vanta。
+# Button that opens the file picker for an ISO, and the Open button of that picker, on the USB
+# and ISO pages.
+usb-choose-iso = 選擇 ISO
+usb-drive = USB 磁碟機
+# $min and $max are formatted numbers (text), in gigabytes and terabytes.
+usb-empty = 找不到 USB 磁碟機。請連接至少 { $min } GB 的 USB 磁碟機，然後選擇「重新整理」。大於 { $max } TB 的磁碟機、唯讀磁碟機，以及正在執行 Windows 的磁碟機不會顯示在這裡。
+usb-refresh = 重新整理
+# Shown when the drive list could not be read.
+usb-scan-failed = 請確認磁碟機已連接，然後選擇「重新整理」。如需詳細資料，請選擇「開啟記錄資料夾」。
+usb-scan-failed-title = 無法列出 USB 磁碟機
+# Parts of a drive's detail line, joined by usb-detail-separator; empty parts are left out.
+# $size is a formatted number of gigabytes (text); $volumes and $serial are text.
+usb-drive-size = { $size } GB
+usb-drive-serial = 序號：{ $serial }
+usb-detail-separator = { " · " }
+usb-review = 檢查隨身碟
+usb-erase-title = 要清除這個 USB 磁碟機嗎？
+usb-erase-description = { $drive }（{ $size } GB）上的所有內容都將被永久清除，包括所有檔案與磁碟分割。請先將要保留的資料複製到其他磁碟機。您的 ISO 會保留。
+usb-layout = Vanta 最多使用磁碟機的 32 GB，其餘空間不會使用。此 USB 磁碟機適用於以 UEFI 模式啟動的電腦，這是 Windows 11 的必要條件。
+usb-ack = 我了解這個 USB 磁碟機上的所有內容都將被清除
+usb-write = 清除並建立隨身碟
+usb-stage-prepare = 正在準備安裝檔案…
+usb-stage-format = 正在格式化隨身碟…
+usb-stage-copy = 正在複製安裝檔案…
+usb-stage-verify = 正在驗證隨身碟…
+usb-working = 請保持 Vanta 開啟，並維持 USB 磁碟機連接。如果您取消，未完成的 USB 磁碟機將無法用來安裝 Windows。
+# Titles of the error bar, the success bar and the close prompt while a USB is being written.
+usb-failed-title = 無法完成隨身碟建立作業
+usb-complete-title = 隨身碟已準備就緒
+usb-close-title = 隨身碟仍在建立中
+# After erasing may have begun.
+usb-failed = 磁碟機可能已被清除，因此目前還無法用來安裝 Windows。請確認磁碟機已連接，然後選擇「檢查隨身碟」再試一次。如果您曾重新連接磁碟機，請先選擇「重新整理」並再次選取它。
+# Before anything on the drive was changed: in general, then for the reasons the writer reports.
+usb-failed-unchanged = 您的 USB 磁碟機沒有任何變更。請選擇「開啟記錄資料夾」查看失敗原因，然後選擇「檢查隨身碟」再試一次。
+usb-failed-iso = 此 ISO 無法用來建立安裝隨身碟。請選擇 Vanta 建立的 ISO，或從 Microsoft 取得、且為 Vanta 支援版本的 Windows 11 ISO。您的 USB 磁碟機沒有任何變更。
+usb-failed-location = ISO 或 Vanta Manager 位於此 USB 磁碟機、網路位置或連結的資料夾中。請將其移至這台電腦的本機資料夾，然後再試一次。您的 USB 磁碟機沒有任何變更。
+usb-failed-space = Windows 磁碟機的可用空間不足，無法準備安裝檔案。請釋放空間，然後再試一次。您的 USB 磁碟機沒有任何變更。
+usb-failed-fit = 此 USB 磁碟機的容量不足以容納安裝檔案。請改用容量較大的磁碟機，然後再試一次。您的 USB 磁碟機沒有任何變更。
+usb-failed-drive-changed = 讀取清單後，USB 磁碟機已被移除、重新連接或更換。請選擇「重新整理」，再次選取該磁碟機，然後選擇「檢查隨身碟」。您的 USB 磁碟機沒有任何變更。
+usb-cancelled = 磁碟機上可能留有不完整的安裝檔案。請重新建立後再用來安裝 Windows。
+usb-cancelled-title = 已取消建立隨身碟
+usb-cancelled-unchanged = 您的 USB 磁碟機沒有任何變更。
+usb-complete = Vanta 已檢查所有檔案。請選擇「退出隨身碟」，然後備份要重新安裝的電腦上的檔案。將隨身碟插入該電腦，然後透過其開機選單從 USB 磁碟機啟動（通常是在電腦啟動時按 F12、F11 或 Esc）。
+usb-eject = 退出隨身碟
+usb-ejected = 現在可以拔除 USB 磁碟機。請備份要重新安裝的電腦上的檔案，然後透過該電腦的開機選單從 USB 磁碟機啟動（通常是在電腦啟動時按 F12、F11 或 Esc）。
+usb-eject-failed = 請關閉正在使用隨身碟的檔案或視窗，然後再試一次。
+usb-eject-failed-title = 無法退出隨身碟
+ready-fresh-title = Vanta 專為全新安裝的 Windows 設計
+ready-fresh-description = 如果您已在這台電腦上使用 Windows 一段時間，請先備份檔案並重新安裝 Windows，然後再繼續。請先確認「電腦檢查」中的「Windows 相容性」已通過，以便重新安裝支援的版本。
+# Home, LTSC and Server are the editions the check refuses; the others are examples of
+# editions it accepts. Keep edition names as Windows shows them.
+detail-edition-unsupported = 不支援 Windows 11 Home、LTSC 和 Server 版本。請使用其他版本，例如 Pro、Education 或 Enterprise。如果 Windows 無法識別您的版本，請先解決此問題再繼續。
+install-source-title = 無法安裝
+install-source-unsupported = Vanta { $source } 無法直接更新至 { $target }。若要使用此版本，請備份您的檔案並重新安裝 Windows。
+# Before a package is chosen, so the version on offer isn't known yet.
+install-source-unsupported-any = Vanta { $source } 無法直接更新。若要使用較新的版本，請備份您的檔案並重新安裝 Windows。
+# "Open package file" is package-open-file. $folder is a folder path (text).
+install-source-resume = Vanta { $target } 的安裝尚未完成，只有 Vanta { $target } 套件才能完成這次安裝。請選擇「開啟套件檔案」並選取該 Vanta 套件（.vantapkg）。如果是由 Vanta 下載的，它位於 { $folder }。
+# Tester build: only the bundled Vanta package can be installed.
+install-source-resume-bundled = Vanta { $target } 的安裝尚未完成。此測試版只能安裝其內建的 Vanta 套件，因此請在正式版 Vanta Manager 中使用 Vanta { $target } 套件完成該安裝。
+install-source-unknown = Vanta 無法確認這台電腦上已安裝的內容，因此目前不會安裝任何項目。請選擇「傳送報告」，讓 Vanta 團隊協助您。
+# $problem is one of the install-source-* messages, or the outcome-* advice for a failed
+# installation; $error is a raw error message or the installer's last error line (text).
+install-source-details = { $problem }詳細資料：{ $error }
+iso-edition-selection = 僅包含支援的版本。安裝 Windows 時，請選擇您擁有 Windows 授權的版本。
+detail-windows-preview = 不支援 Insider 預覽組建。請使用 Windows 11 的正式發行版本。
+detail-windows-release-unknown = Vanta 無法確認此 Windows 組建是否已正式發行。請連線至網際網路後重新檢查。
+# $build is this PC's Windows build and update number, such as 26300.9807 (text).
+detail-windows-release-unlisted = Microsoft 的 Windows 11 正式發行版本清單中沒有組建 { $build }，因此 Vanta 目前還無法安裝在此組建上。不支援 Release Preview 組建和其他預覽組建。待 Microsoft 將此組建列入清單後，請選擇「再次檢查」。
+iso-release-unknown = Vanta 無法確認此 ISO 是 Vanta 套件支援的 Windows 11 正式發行版本。請連線至網際網路，然後再次選擇「檢查檔案」。如果仍然失敗，請從 Microsoft 重新下載 ISO。
+iso-release-unlisted = 此 ISO 中的 Windows 11 組建不在 Microsoft 的正式發行版本清單中。不支援 Release Preview 組建和其他預覽組建。請從 Microsoft 下載 ISO，或待 Microsoft 將此組建列入清單後，再次選擇「檢查檔案」。
+prepare-previous-worker = 先前開始的更新仍在執行。Vanta 會等待更新完成，之後您就可以再次檢查更新。
+
+ready-used-windows-title = 這台電腦上的 Windows 似乎已使用過
+ready-used-windows-description = 這台電腦上的 Windows 至少已安裝一週，或已有多個應用程式。在此安裝 Vanta 不受支援，也強烈不建議：您現有的應用程式和設定可能無法正常運作，而且 Vanta 會移除 OneDrive，因此其中的檔案將停止同步，您的「桌面」、「文件」和「圖片」也可能看起來是空的。請先備份檔案並重新安裝 Windows，或只在您接受風險時才繼續。
+ready-used-windows-dismiss = 仍要繼續
+
+prepare-resumed = 電腦已重新啟動，Vanta 已還原您目前的選擇。請選擇「繼續更新」，在安裝 Vanta 前完成更新。
+prepare-continue = 繼續更新
+prepare-saving-restart = 正在儲存您的選擇，並設定在 Windows 重新啟動後開啟 Vanta…
+prepare-restart-save-failed = 無法儲存您的選擇。請在重新啟動前重試。
+prepare-restart-registration-failed = 您的選擇已儲存，但 Vanta 無法設定在重新啟動後自動開啟。請再試一次，或自行重新啟動電腦，並在登入後開啟 Vanta。
+prepare-restart-source-linked = 您的選擇已儲存，但 Vanta Manager 位於連結的資料夾中時，Vanta 無法設定在重新啟動後自動開啟。請關閉 Vanta，並將 Vanta Manager 移至這台電腦的本機資料夾。然後從該處開啟，或自行重新啟動電腦，並在登入後從該處開啟。
+prepare-restart-failed = Vanta 無法重新啟動您的電腦。請再試一次，或從「開始」功能表重新啟動。您的選擇已儲存，Vanta 會在您登入後重新開啟。
+diagnostics-export = 匯出診斷資訊
+diagnostics-exporting = 正在收集診斷資訊…
+diagnostics-privacy = 您可以私下傳送報告給 Vanta 團隊，或匯出診斷 ZIP，以便在尋求協助時分享。Vanta 會從 ZIP 中移除您的使用者名稱、電腦名稱和電子郵件地址。
+# Title of the result bar after an export; its button is iso-open-folder.
+diagnostics-saved = 已建立診斷 ZIP
+diagnostics-failed-title = 無法匯出診斷資訊
+# $error is the raw error (text).
+diagnostics-failed = 請確認電腦有足夠的可用磁碟空間，然後再試一次。詳細資料：{ $error }
+
+## Tester builds (embedded-package feature)
+
+# One line of chrome under the title bar on a release-candidate build.
+rc-banner = Vanta { $release } 測試版。此應用程式只會安裝內建的 Vanta 套件。
+home-status-bundled = 測試版 { $release }
+home-status-ready = 準備就緒
+package-bundled = 此應用程式內建的 Vanta { $version } 已可安裝。
+rc-about-release = 測試版
+rc-about-commit = 原始碼提交
+rc-about-package = 內建 Vanta 套件（SHA-256）
+iso-package-bundled = 此應用程式內建的 Vanta 套件
+prepare-percent = 此階段已完成 { $percent }%
+prepare-count = 已完成的更新：{ $completed } / { $total }
+prepare-bytes = 已下載 { $downloaded } MB，總量約 { $total } MB
+prepare-elapsed = 已用時間：{ $minutes } 分 { $seconds } 秒
+prepare-progress-waiting = 正在等候更新服務。此步驟暫無進度百分比。
+prepare-progress-unchanged = 已有 { $minutes } 分鐘沒有進度。大型更新可能需要一段時間，請保持 Vanta 開啟。如需詳細資料，請選擇「開啟記錄資料夾」。
+prepare-report-delayed = Windows 已有 { $seconds } 秒未回報進度。更新可能仍在進行，請保持 Vanta 開啟。
+
+prepare-affected-app = 受影響的應用程式
+prepare-app-in-use = 請關閉 { $app }，然後再試一次。應用程式開啟時，Windows 無法更新它。如果找不到它的視窗，請在工作管理員中將其關閉。如果仍然失敗，請重新啟動電腦，並在開啟 { $app } 之前再試一次。
+prepare-install-busy = 其他安裝或必要的重新啟動正在阻擋更新。請等待其他安裝完成；如果 Windows 要求重新啟動，請重新啟動電腦，然後再試一次。
+prepare-failed-component-store = Windows 回報其元件存放區已損毀，導致無法安裝更新，且 Vanta 無法修復。請重新啟動電腦，然後選擇「再試一次」。如果更新仍然失敗，請備份您的檔案，並使用 Vanta ISO 重新安裝 Windows。
+prepare-failed-component-store-unrepairable = Windows 回報其元件存放區已損毀且無法修復，因此無法安裝更新。請備份您的檔案，然後使用 Vanta ISO 重新安裝 Windows。
+# Causes the update worker names. The worker's own English message is shown below as a detail.
+prepare-failed-session-owner = Vanta 執行時使用的帳戶與登入 Windows 的帳戶不同。請使用系統管理員帳戶登入 Windows，從該帳戶開啟 Vanta，然後再試一次。
+prepare-failed-store-missing = 您的帳戶尚未設定 Microsoft Store。請開啟一次 Microsoft Store；如果找不到它，請重新安裝，然後再試一次。
+prepare-failed-store-battery = Microsoft Store 為了節省電池電力而暫停了更新。請將電腦接上電源，然後再試一次。
+prepare-failed-store-network = Microsoft Store 已暫停更新，需等電腦連上未設為計量付費的網路才會繼續。請連線至未設為計量付費的 Wi-Fi 或乙太網路，然後再試一次。
+prepare-failed-store-timeout = 市集應用程式尚未完成更新。請在 Microsoft Store 中完成其餘的下載，然後再試一次。
+prepare-failed-store-passes = Microsoft Store 持續提供新的更新。請在 Microsoft Store 中完成其餘的更新，然後再試一次。
+prepare-failed-manual-updates = 部分 Windows 更新需要在 Windows Update 中完成。請開啟 Windows Update 完成這些更新，然後再試一次。
+prepare-failed-windows-passes = Windows Update 持續提供新的更新。請在 Windows Update 中完成其餘的更新，然後再試一次。
+prepare-failed-source-linked = Vanta Manager 位於連結的資料夾中。請關閉 Vanta，將 Vanta Manager 移至這台電腦的本機資料夾，然後從該處開啟。
+prepare-error-code = 錯誤碼：{ $code }
+prepare-open-store = 開啟 Microsoft Store
+
+check-user-account = 使用者帳戶
+detail-user-account-ok = UAC 已啟用，您的帳戶已準備好進行安裝。
+detail-user-account-not-ready = 請啟用使用者帳戶控制（UAC），重新啟動電腦後再試。如果您使用的是內建 Administrator 帳戶，請使用另一個系統管理員帳戶登入。
+detail-user-account-work-or-school = 無法從公司或學校帳戶（Microsoft Entra ID）安裝 Vanta。請使用本機帳戶或 Microsoft 帳戶登入，然後再試一次。
+detail-user-account-unknown = Vanta 無法檢查您的使用者帳戶。請重新啟動電腦，然後重新開啟 Vanta 並再次檢查。如果持續發生這種情況，請選擇「傳送報告」。Windows 回報：{ $error }
+
+footer-prepare-required = 請先完成 Windows 和市集應用程式的更新再繼續
+footer-prepare-stopping = 目前步驟完成後即會停止更新…
+resume-choices-title = 繼續上次安裝
+resume-choices-detail = 為了完成該次安裝，Vanta 已還原您上次的選擇。在安裝完成前，您無法在「您的選擇」中變更它們。
+
+## Voluntary reports
+report-title = 傳送報告
+report-received = 已收到報告
+report-reference = 如需就此報告聯絡 Vanta 團隊，請保留此參考編號。如果您留下了聯絡方式，團隊可能會用它回覆您，但不保證一定會回覆。
+# Accessible name of the Copy button beside the report reference.
+report-copy-reference = 複製報告參考編號
+report-another = 傳送另一份報告
+# Label of the choice between the two kinds of report.
+report-kind = 您想傳送什麼？
+report-kind-issue = 問題
+report-kind-suggestion = 建議
+# $min and $max are numbers: the message lengths the report service accepts.
+report-intro = 請描述發生了什麼事，或您希望改變什麼（{ $min }–{ $max } 個字元）。請勿在訊息中包含密碼。
+report-message = 您的訊息
+report-message-placeholder = 我當時想要…
+report-contact = 聯絡方式（選填）
+report-contact-placeholder = 電子郵件或 Discord 使用者名稱
+report-attach = 附加診斷資訊
+report-attach-description = 有助於找出原因的記錄和系統詳細資料。Vanta 會移除您的使用者名稱、電腦名稱、電子郵件地址，以及已知的密碼或金鑰。錯誤詳細資料、硬體型號和應用程式名稱會保留。您可以在傳送前檢查 ZIP。
+report-prepare = 準備診斷資訊
+report-review = 檢查 ZIP
+report-prepare-failed-title = 無法準備診斷資訊
+# $error is a raw error message (text).
+report-prepare-failed = 請重新準備診斷資訊，或取消勾選「附加診斷資訊」，改為傳送不含診斷資訊的報告。詳細資料：{ $error }
+report-privacy = Vanta Manager does not send reports: nothing leaves this PC. Your message and diagnostics stay here.
+report-consent = 我同意將此報告及附加的診斷資訊傳送給 Vanta 團隊
+report-failed = 您的訊息仍保留在這裡。請檢查網際網路連線，然後選擇「再試一次」，或透過報告網站傳送報告。
+report-failed-busy = 報告服務目前忙碌中。您的訊息仍保留在這裡。請稍後再試。
+report-failed-outdated = 此版本的 Vanta Manager 已無法傳送報告。您的訊息仍保留在這裡，請將它複製到報告網站。如果您附加了診斷資訊，請選擇「檢查 ZIP」，並將 ZIP 一併附加到網站上。
+report-failed-diagnostics = 無法傳送已準備的診斷資訊。您的訊息仍保留在這裡。請重新準備診斷資訊，或取消勾選「附加診斷資訊」。
+# Link under a report that wasn't sent.
+report-sending = 正在傳送…
+report-send = 傳送報告
+
+# $min and $max are numbers: the message lengths the report service accepts.
+report-validation-message = 請輸入 { $min }–{ $max } 個字元。
+
+# $max is a number: the longest contact details the report service accepts.
+report-validation-contact = 請將聯絡資訊限制在 { $max } 個字元以內。
+
+report-validation-consent = 請確認您同意傳送此報告。
+
+report-failed-title = 報告未傳送
+
+## Windows version update
+home-plan-intro = 這次更新分為兩個部分。您的檔案和應用程式都會保留。如果更新 Windows 時撤銷了 Vanta 的任何變更，Vanta 會重新套用這些變更。
+home-plan-windows-title = Windows 11 版本 { $release }
+home-plan-windows-detail = Vanta 會從 Windows Update 安裝此版本。電腦需要重新啟動才能完成安裝。
+home-plan-windows-optional = 建議選項。Vanta 會從 Windows Update 安裝此版本。電腦需要重新啟動才能完成安裝。
+home-plan-atlas-title = Vanta { $version }
+home-plan-atlas-detail = Vanta 會更新其檔案，並保留您先前的選擇。最後電腦會重新啟動。
+home-end-of-updates-title = Windows 11 版本 { $current } 將於 { $date } 停止接收安全性更新
+home-end-of-updates-past-title = Windows 11 版本 { $current } 已不再接收安全性更新
+home-end-of-updates-message = 更新至 Vanta { $version } 時，也會將這台電腦更新至 Windows 11 版本 { $release }，此版本會持續接收安全性更新至 { $until }。
+install-windows-edition = Vanta { $version } 適用於 Windows 11 Pro、Enterprise 和 Education。這台電腦使用的是 { $product }，因此無法安裝 Vanta。
+install-windows-edition-ending = Vanta { $version } 適用於 Windows 11 Pro、Enterprise 和 Education。這台電腦使用的是 { $product }，因此無法安裝 Vanta。Windows 11 版本 { $current } 將於 { $date } 停止接收安全性更新。Windows Update 可以將這台電腦更新至較新的版本。
+install-windows-no-path = Vanta { $version } 需要 Windows 11 版本 { $releases }，而 Windows Update 無法將這台電腦從目前的 Windows 更新至該版本。若要使用 Vanta { $version }，請備份您的檔案，並使用 Vanta ISO 重新安裝 Windows。
+home-update-access-title = Windows Update 設定已因 Vanta 更新而變更
+home-update-access-not-offered = Vanta 已開啟 Windows Update，以將這台電腦更新至 Windows 11 版本 { $release }，但 Windows Update 尚未提供此版本。請選擇「再次檢查」或「還原設定」。
+home-update-access-before = Vanta 已開啟 Windows Update，以將這台電腦更新至 Windows 11 版本 { $release }，但尚未完成。請繼續進行更新，或選擇「還原設定」。
+home-update-access-after = 這台電腦已是 Windows 11 版本 { $release }。請完成 Vanta 的安裝，或選擇「還原設定」。
+home-update-access-plain = Vanta 已開啟 Windows Update 來安裝更新，但尚未完成。請繼續進行更新，或選擇「還原設定」。
+home-update-access-unreadable = Vanta 無法讀取它變更 Windows Update 設定時留下的記錄，因此不會變更或還原任何項目。請選擇「傳送報告」，讓 Vanta 團隊協助您。
+home-update-access-failed = Vanta 無法還原設定。請選擇「再試一次」或「傳送報告」。詳細資料：{ $error }
+home-update-access-install-active = 請先完成 Vanta 的安裝。安裝的最後階段會還原這些設定。
+home-continue-update = 繼續更新
+home-put-back = 還原設定
+home-putting-back = 正在還原設定…
+windows-card-title = Windows 11 版本 { $release }
+windows-card-required = Vanta { $version } 需要較新版本的 Windows。Vanta 在下方更新 Windows 時，也會從 Windows Update 安裝 Windows 11 版本 { $release }。
+windows-card-question = 這台電腦要使用哪個 Windows 版本？
+windows-choice-move = 更新至 Windows 11 版本 { $release }
+windows-choice-move-detail = 建議選項。安全性更新提供至 { $date }。需要多重新啟動一次。
+windows-choice-keep = 保留 Windows 11 版本 { $current }
+windows-choice-keep-detail = 您的電腦會維持在此版本。Windows Update 不會將它更新至較新的版本，因此日後若要更新版本，需要在 Vanta Manager 中再執行一次更新。
+windows-card-facts = 變更內容
+windows-fact-keep = 您的檔案和應用程式都會保留。如果這次更新撤銷了 Vanta 的任何變更，Vanta 會在安裝時重新套用這些變更。
+windows-fact-restart = 電腦至少還需要重新啟動一次才能完成。
+transition-offer-expectation = Windows Update 通常會在幾分鐘內提供此版本，但最多可能需要 2 小時；Vanta 會為您等待並檢查。
+windows-fact-stays = 之後，Windows 會維持在版本 { $release }，不會自行更新至較新的版本。
+windows-fact-removed = 版本 { $release } 不包含 Windows PowerShell 2.0 和 WMIC 工具。
+windows-card-undo = 若日後要撤銷此更新，請在 Windows Update 的「更新記錄」中解除安裝此更新。如果 Windows 是以自行重新安裝的方式更新，請改為在 10 天內，於「系統」設定的「復原」中選擇「返回」。Vanta { $version } 不支援版本 { $current }，因此安裝 Vanta { $version } 後，請勿撤銷此更新。
+windows-card-undo-optional = 若日後要撤銷此更新，請在 Windows Update 的「更新記錄」中解除安裝此更新。如果 Windows 是以自行重新安裝的方式更新，請改為在 10 天內，於「系統」設定的「復原」中選擇「返回」。
+windows-terms = 我接受 Windows 11 版本 { $release } 的 Microsoft 軟體授權條款
+windows-terms-link = 閱讀授權條款
+windows-card-locked = 若要保留版本 { $current }，請選擇「取消」，然後選擇「停止更新」。
+prepare-description-transition = 安裝之前，Vanta 會先安裝 Windows 等待中的更新，接著安裝 Windows 11 版本 { $release }，然後更新 Microsoft Store 和您的市集應用程式。已開啟的市集應用程式可能會在更新時關閉，因此請先儲存您在其中的工作。電腦至少會重新啟動一次。
+prepare-start-transition = 將 Windows 更新至版本 { $release }
+prepare-needs-terms = 在「Windows 11 版本 { $release }」中接受授權條款後即可使用。
+ready-banner-not-offered-message = 請查看「更新 Windows 和市集應用程式」，了解您目前可以採取的動作。
+ready-banner-transition-failed-message = 請查看「更新 Windows 和市集應用程式」中的後續處理方式。
+ready-banner-terms-title = 請接受授權條款以繼續
+ready-banner-terms-message = 授權條款位於本頁下方的「Windows 11 版本 { $release }」中。接受後，請選擇「將 Windows 更新至版本 { $release }」。
+access-notice-title = Vanta 會暫時開啟 Windows Update
+access-off = 這台電腦已關閉 Windows Update。Vanta 更新 Windows 期間會重新開啟它。
+access-paused = 這台電腦已暫停 Windows 更新。Vanta 更新 Windows 期間會解除暫停。
+access-delayed = 這台電腦已延遲每月更新。Vanta 更新 Windows 期間會取消延遲。
+access-back-chosen = 安裝 Vanta { $version } 後，這些設定會恢復為您所選擇的狀態。
+access-back = 安裝 Vanta { $version } 後，這些設定會恢復原狀。
+access-back-stop = 如果您在那之前停止，Vanta 會還原這些設定。
+prepare-reboot-transition = Windows 11 版本 { $release } 已安裝。請選擇「重新啟動並繼續」以完成安裝。您登入後，Vanta 會重新開啟。
+prepare-reboot-commit = Windows 還需要重新啟動一次，才能完成版本 { $release } 的安裝。您登入後，Vanta 會重新開啟。
+prepare-restart-commit-failed = Windows 無法讓版本 { $release } 準備好在重新啟動時完成安裝，因此電腦沒有重新啟動。請選擇「重新啟動並繼續」再試一次。
+prepare-reason-feature-update = 新的 Windows 版本
+prepare-reason-feature-commit = 完成新 Windows 版本的安裝
+prepare-resumed-transition = 電腦已重新啟動。請選擇「繼續更新」，讓 Vanta 確認 Windows 11 版本 { $release } 已完成安裝，並安裝其餘的更新。
+prepare-waiting-offer = 正在等待 Windows Update 提供 Windows 11 版本 { $release }。這通常需要幾分鐘，但最多可能需要 2 小時。您可以繼續使用電腦，但請保持 Vanta 開啟。
+prepare-resumed-before-move = 電腦已重新啟動以完成更新的安裝。請選擇「繼續更新」，讓 Vanta 安裝其餘的更新，然後安裝 Windows 11 版本 { $release }。
+prepare-not-offered-title = 正在等待 Windows Update 提供 Windows 11 版本 { $release }
+prepare-transition-failed-title = Windows 無法更新至版本 { $release }
+prepare-failed-feature-not-offered = Windows Update 可能需要一段時間，才會向電腦提供 Windows 11 版本 { $release }。您的電腦目前仍是版本 { $current }。
+prepare-offer-rechecking = Vanta 會每 10 分鐘再檢查一次，Windows Update 一提供此版本，Vanta 就會自動繼續。您也可以選擇「再次檢查」。
+prepare-offer-waited = 已等待 { $minutes } 分鐘。
+prepare-offer-next-check = 將於 { $minutes } 分鐘後再次檢查。
+prepare-offer-checking-now = 正在檢查。
+prepare-offer-check-again = 請選擇「再次檢查」立即查看。
+prepare-offer-wait-ended-title = Windows Update 尚未提供 Windows 11 版本 { $release }
+prepare-offer-wait-ended = Windows Update 未在 2 小時內提供 Windows 11 版本 { $release }，因此 Vanta 已停止等待，並還原了您的 Windows Update 設定。請稍後選擇「再次檢查」。如果您無法等待，請備份您的檔案，並使用 Vanta ISO 重新安裝 Windows。
+prepare-offer-wait-put-back-failed = Windows Update 未在 2 小時內提供 Windows 11 版本 { $release }，而且 Vanta 無法還原您的 Windows Update 設定。請選擇「還原設定」再試一次。詳細資料：{ $error }
+prepare-failed-feature-hardware = 這台電腦不符合 Windows 11 的硬體需求（{ $missing }），因此 Windows Update 不會將它更新至版本 { $release }。您的電腦目前仍是版本 { $current }。若要使用 Vanta { $version }，請備份您的檔案，並使用 Vanta ISO 重新安裝 Windows。
+hardware-tpm = TPM 2.0
+hardware-uefi = UEFI 韌體
+prepare-failed-feature-hidden = 這台電腦已在 Windows Update 中隱藏 Windows 11 版本 { $release }。請使用您當初隱藏它的工具將其重新顯示，然後選擇「再試一次」。
+prepare-failed-feature-disk-space = Windows 需要磁碟機 { $drive } 上至少有 { $needed } GB 的可用空間才能進行此更新，但目前只有 { $free } GB。Vanta 沒有進行任何變更。請釋放空間，然後選擇「再試一次」。
+prepare-failed-feature-servicing = Windows 回報其元件存放區已損毀且無法修復，因此 Vanta 沒有進行任何變更。請修復 Windows，然後選擇「再試一次」。
+prepare-failed-feature-managed = 這台電腦是從組織的更新伺服器取得更新，因此 Vanta 無法將它更新至版本 { $release }。Vanta 沒有進行任何變更。
+prepare-failed-feature-policy = 這台電腦上有某個項目會在 Vanta 變更 { $setting } 後一再將它改回，因此 Vanta 無法更新 Windows。如果這台電腦由組織管理，請洽詢該組織。當您停止時，Vanta 會還原它所做的變更。
+prepare-failed-feature-blocked = 有一項不是由 Vanta 變更的設定使 Windows Update 無法執行：{ $setting }。請變更此設定，讓 Windows Update 可以執行，然後選擇「再試一次」。
+prepare-failed-feature-rolled-back = Windows 無法在重新啟動期間完成版本 { $release } 的安裝，已退回版本 { $current }。您的檔案和應用程式不受影響。請選擇「再試一次」或「傳送報告」。
+prepare-failed-feature-components-lost = Windows 更新後，Vanta 的部分變更已消失，但 Windows 沒有任何自行重新安裝的跡象，因此 Vanta 無法判斷發生了什麼事。Vanta { $version } 並未安裝。請選擇「傳送報告」，讓 Vanta 團隊協助您。
+prepare-failed-feature-build = Vanta 更新這台電腦時，Windows 版本發生了變更。請選擇「還原設定」，然後從首頁重新開始。
+prepare-failed-feature-journal = Vanta 無法讀取它變更 Windows Update 設定時留下的記錄，因此不會變更或還原任何項目。請選擇「傳送報告」，讓 Vanta 團隊協助您。
+prepare-failed-feature-pin = 這台電腦上的 Windows Update 原則 { $setting } 具有 Vanta 無法記錄的值，因此 Vanta 沒有進行任何變更。請選擇「傳送報告」，讓 Vanta 團隊協助您。
+prepare-failed-feature-terms = 請接受 Windows 11 版本 { $release } 的授權條款，然後選擇「再試一次」。
+prepare-failed-feature-failed = Windows 無法安裝版本 { $release }。您的電腦目前仍是版本 { $current }。請選擇「再試一次」。如果再次失敗，請選擇「傳送報告」。
+prepare-check-again = 再次檢查
+prepare-keep-version = 保留版本 { $current }
+stop-update-title = 要停止更新至 Vanta { $version } 嗎？
+stop-update-title-windows = 要停止更新 Windows 嗎？
+stop-update-before = Vanta 會還原它變更的 Windows Update 設定。Windows 已安裝的更新會保留，您的電腦會維持在 Windows 11 版本 { $current }。
+stop-update-after = 您的電腦會維持在 Windows 11 版本 { $release }。Vanta 會還原它變更的 Windows Update 設定。
+stop-update-access = Vanta 會還原它變更的 Windows Update 設定。Windows 已安裝的更新會保留。
+stop-update-keep = 繼續進行更新
+# Dialog shown when the window is closed while Windows Update is turned on for an update; its
+# buttons are window-close-keep and window-close-put-back.
+window-close-update-access-title = 要關閉 Vanta 嗎？
+window-close-update-access-message = Vanta 會在關閉前還原它變更的 Windows Update 設定。您可以從首頁重新開始更新。
+window-close-put-back = 還原並關閉
+window-close-put-back-failed-title = 要關閉而不還原設定嗎？
+window-close-put-back-failed-message = 如果您現在關閉 Vanta，Windows Update 設定會維持 Vanta 變更後的狀態。再次開啟 Vanta 時，首頁會讓您還原這些設定。
+installed-update-off-again = Windows Update 已依您的選擇再次關閉。關閉期間，您的電腦不會收到安全性更新。
+installed-update-paused-again = Windows 更新已依您的選擇再次暫停。暫停期間，您的電腦不會收到安全性更新。
+detail-build-transition = 這台電腦使用的是 Windows 11 版本 { $current }，這個 Vanta 版本不支援此 Windows 版本。Vanta 在下方更新 Windows 時，會將 Windows 更新至版本 { $release }。
+report-transition-intro = 為 Vanta 更新 Windows 的作業未完成。以下是提供給 Vanta 團隊的詳細資料：
+mode-rebase = Windows 更新後重新安裝
+history-mode-rebase = Windows 更新後重新安裝
+ready-rebase-title = Windows 在更新時已自行重新安裝
+ready-rebase-message = Windows 11 版本 { $release } 取代了這台電腦原有的 Windows，因此 Vanta 的部分變更已消失。Vanta { $version } 會依照您為 Vanta { $previous } 所做的選擇，重新套用這些變更。
+update-path-update-title = 您要如何更新至 Vanta { $version }？
+update-path-reinstall-title = 您要如何重新安裝 Vanta { $version }？
+update-path-keep = 保留我的選擇
+update-path-keep-detail = Vanta 會依這台電腦目前的設定保留每一項選擇，不做任何變更。這是較快的方式。
+update-path-choose = 重新選擇
+update-path-choose-detail = 從這台電腦目前的設定開始，重新進行每一項選擇。Vanta 會像首次安裝時一樣套用每一項選擇。您的應用程式、檔案、「開始」功能表、工作列和佈景主題都會維持原狀；您在 Vanta 資料夾中變更過、但不在這些選擇範圍內的設定也會保留。
+update-path-now-title = 您在這台電腦上目前的選擇
+update-path-unknown = Vanta 無法從您的電腦判斷這一項，因此會詢問您
+option-detected-off = 在目前系統上偵測到已關閉。尚未做出任何選擇，因此已選取安全預設值（保持開啟）：請自行選擇。
+update-path-differs = 在 Vanta 對您上次安裝的記錄中，{ $choices } 與這台電腦不符。此清單顯示的是這台電腦目前的設定。
+keep-choices-title = 保留您的選擇
+keep-choices-partial = Vanta 會保留這台電腦目前的設定。下列項目無法從您的電腦判斷，請自行選擇：{ $missing }
+choose-again-title = 正在重新選擇
+choose-again-detail = 每一項選擇都會從這台電腦目前的設定開始。Vanta 會在安裝期間套用您的選擇。
+option-now = 這台電腦目前的設定
+change-defender-enable = Vanta 會恢復 Microsoft Defender。重新啟動後，請在 Windows 安全性中開啟它的防護。
+change-mitigations-default = Vanta 會依 Windows 的預設值重新開啟處理器防護。重新啟動後生效。
+change-mitigations-all-on = 目前所有處理器防護都已開啟。保留防護會讓它們全部維持開啟。
+change-auto-updates-default = Vanta 會讓 Windows 重新自動安裝更新。
+change-hibernation-on = Vanta 會重新開啟休眠。
+change-power-saving-on = Vanta 會重新開啟省電功能，並改回您先前的電源計劃；如果沒有，則改用「平衡」。
+change-core-isolation-on = Vanta 會重新開啟虛擬化型安全性（VBS），除非這台電腦上有原則控制此項。重新啟動後生效。
+change-remove-snipping-tool = 為這台電腦上的所有使用者移除剪取工具。Vanta 之後無法將它恢復，但您可以從 Microsoft Store 重新安裝。
+fixed-uninstall-edge = Microsoft Edge 已移除，更新 Vanta 無法將它恢復。若要重新安裝，請使用 Vanta 資料夾中的「Install or Remove Edge」。
+fixed-installed = { $app } 已安裝。Vanta 不會解除安裝應用程式；若要移除，請前往 Windows 設定中的「已安裝的應用程式」。
+browser-also = { $installed } 會保留，Vanta 也會安裝 { $browser }。
+summary-update-path = Vanta 更新方式
+step-heading-update-path-a11y = { $heading }。{ $question }
+security-banner-removed-title = Vanta 已從這台電腦移除 Microsoft Defender
+security-banner-restore-title = Vanta 會在這次安裝中恢復 Microsoft Defender
+security-banner-restore-message = Defender 尚未執行，因此此步驟沒有需要關閉的項目。重新啟動後，請在 Windows 安全性中開啟它的防護。請選擇「繼續」。
+security-banner-missing-title = 找不到 Microsoft Defender
+security-banner-missing-message = Microsoft Defender 不是 Vanta 移除的，因此 Vanta 無法將它恢復。您可以繼續，但在您安裝其他防毒應用程式或修復 Windows 之前，電腦將沒有任何防毒保護。
+installed-defender-not-restored-title = Microsoft Defender 仍未恢復
+installed-defender-not-restored-message = 您選擇了保留 Microsoft Defender，但先前的 Vanta 更新沒有將它恢復，因此您的電腦目前沒有任何防毒保護。若要恢復，請更新或重新安裝 Vanta 並選取「重新選擇」；或開啟桌面上 Vanta 資料夾中「7. Security」內的「Defender」資料夾，執行「Toggle Defender」，選擇「Enable Windows Defender」，然後重新啟動電腦。
+choices-not-applied-title = 部分選擇未生效
+choices-not-applied-message = Vanta 已為 { $choices } 記錄這台電腦目前的設定。原因請參閱安裝記錄。
+rebase-choices-title = 您在 Vanta { $previous } 的選擇
+rebase-choices-detail = Vanta 會使用您為 Vanta { $previous } 所做的選擇，因此這裡不需要再選擇。若之後要變更，請選擇「重新安裝 Vanta」，然後選取「重新選擇」。
+rebase-choices-partial = Vanta 會使用您為 Vanta { $previous } 所做的選擇，但找不到下列選擇，請檢查這些項目：{ $missing }
+restart-other-title = 另一位使用者已登入這台電腦
+restart-others-title = 其他使用者已登入這台電腦
+restart-others-message = 重新啟動會關閉他們的應用程式，他們未儲存的工作將會遺失。已登入：{ $names }。
+restart-others-keep = 不要重新啟動
+restart-others-restart = 仍要重新啟動
+prepare-store-self-update = 正在先更新 Microsoft Store。這台電腦上的 Microsoft Store 版本過舊。
+prepare-store-repair = 正在修復 Microsoft Store。這可能需要幾分鐘。
+prepare-store-updated = Microsoft Store 版本過舊，因此 Vanta 先更新了它，再更新您的應用程式。
+prepare-store-bootstrapped = Microsoft Store 無法自行更新，因此 Vanta 從 Microsoft 安裝了最新的應用程式安裝程式和 Microsoft Store。
+prepare-store-repaired = Microsoft Store 無法正常運作，因此 Vanta 已將其修復。
+prepare-store-skipped-removed = 這台電腦已關閉 Microsoft Store，因此 Vanta 略過了市集應用程式的更新。
+prepare-failed-store-repair-failed = Microsoft Store 無法在這台電腦上安裝或更新應用程式，Vanta 也無法修復它。Vanta 需要 Microsoft Store 正常運作，因為在它損毀時安裝 Vanta，可能會讓 Microsoft Store 及其應用程式持續無法運作。請選擇「修復 Microsoft Store」再試一次。如果仍然無法運作，請備份您的檔案，並使用 Vanta ISO 重新安裝 Windows，或選擇「傳送報告」。
+prepare-repair-store = 修復 Microsoft Store
+
+screen-keyboard-title = 鍵盤語言
+screen-keyboard-question = 您使用多種鍵盤語言嗎？
+package-option-keyboard-shortcuts = 是，使用鍵盤快捷鍵
+package-option-keyboard-selector = 是，使用工作列選擇器
+package-option-keyboard-single = 否，只使用一種鍵盤配置
+consequence-keyboard-shortcuts = Alt+Shift 切換語言；Ctrl+Shift 切換配置。
+consequence-keyboard-selector = 關閉 Alt+Shift 和 Ctrl+Shift，避免遊戲時意外切換。
+package-choice-keyboard-description = 選擇切換鍵盤語言的方式。
+consequence-keyboard-single = { consequence-keyboard-selector }
+
+# 選項頁面頂端的選擇模式列。
+options-mode-title = 選擇模式
+options-mode-recommended = Vanta 建議
+options-mode-manual = 手動選擇
+options-mode-recommended-detail = 僅對此畫面的選項套用 Vanta 建議設定（保留 VBS、網路釣魚防護、Store 與剪取工具；啟用 Brave 與 Vanta 最佳化，不變更先前的選擇）。
+options-mode-manual-detail = 預設取消勾選所有選用項目以便逐一挑選，或一鍵套用 Vanta 建議設定。
+options-mode-proceed = 使用建議設定繼續
+prepare-ready-title = 一切就緒 — 按一下下方「繼續」
+prepare-ready-detail = Windows 已準備好進入下一步，您現在可以繼續。
+option-recommended-label = { $label }（建議）
+option-core-isolation-unlock = 我不玩《特戰英豪》(Valorant) 或其他需要此功能的反作弊遊戲
+option-why-disable-hibernation = 效益：釋放數 GB 的 SSD 空間並確保每次冷開機乾淨。注意：筆電將無法使用休眠與快速啟動。
+option-why-disable-power-saving = 效益：減少遊戲時的降頻與延遲波動。注意：耗電會增加，筆電續航力會縮短。
+option-why-disable-core-isolation = 效益：部分電腦上可略微降低 CPU 負擔。注意：會降低對惡意驅動程式的防護，並使 Valorant/Vanguard 等嚴格反作弊遊戲無法啟動。
+option-why-disable-phishing-protection = 作用：關閉在可疑網站輸入 Windows 密碼時的系統警告。效益：對幀率沒有實質提升。注意：降低防密碼竊取保護。
+option-why-disable-gamebar = 作用：關閉 Xbox Game Bar 覆蓋層與背景錄影（Game DVR）。效益：減少遊戲時的顯卡與磁碟負擔。注意：Win+G 與系統剪輯錄影將無法使用。
+option-why-remove-store = 作用：保留 App Installer 與 winget，僅移除 Microsoft Store 應用程式。效益：減少背景更新與程序。注意：無法透過商店下載應用程式或 Game Pass 遊戲。
+option-why-vanta-power = 作用：啟用專為桌機調校的 Vanta 電源計畫。效益：避免節能降頻，維持遊戲反應速度。注意：僅套用於桌機，筆電會自動略過。
+option-why-vanta-memory = 作用：保持記憶體壓縮開啟，關閉分頁合併與應用程式預先啟動。效益：減少背景磁碟讀寫並提升幀時間穩定度。注意：大型程式初次開啟可能略慢。
+option-why-tools-on-logon = 作用：安裝完成後下次登入自動開啟 Vanta Tools。效益：方便立即安裝程式與微調設定。注意：無永久影響，可隨時關閉。
+option-why-remove-snipping-tool = 作用：解除安裝 Windows 內建剪取工具。效益：若已使用 ShareX 或 Lightshot，可減少重複程式。注意：安裝替代工具前 Win+Shift+S 將失效。
+option-why-uninstall-edge = 效益：移除 Edge 的背景更新程式與服務。注意：請確認已安裝或在下方勾選其他瀏覽器。
+option-why-install-another-browser = 效益：設定完成後立即可用瀏覽器，移除 Edge 時特別實用。注意：安裝過程需要網路連線。
+option-why-install-eclean = 效益：協助清理暫存檔並檢查開機啟動程式。注意：選用工具，需要帳號與網路連線。
+option-why-browser-brave = 作用：安裝內建廣告與追蹤攔截的 Chromium 瀏覽器 Brave。效益：免裝擴充即可快速清爽瀏覽。注意：選用的加密功能可在設定中忽略。
+option-why-browser-librewolf = 作用：安裝無遙測、強化隱私的 Firefox 分支 LibreWolf。效益：預設提供強力防追蹤保護。注意：部分網站可能需要放行 Cookie。
+option-why-browser-firefox = 作用：安裝獨立於 Chromium 的 Mozilla Firefox。效益：隱私保護良好且擴充生態豐富。注意：少數專為 Chromium 設計的網頁可能表現不同。
+option-why-browser-chrome = 作用：安裝支援 Google 帳號同步的 Google Chrome。效益：網頁相容性最高。注意：記憶體用量較高，資料收集多於隱私導向瀏覽器。

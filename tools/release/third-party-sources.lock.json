@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "output": "Vanta-{version}-third-party-sources.zip",
+  "goToolchain": {
+    "version": "go1.27.4",
+    "url": "https://go.dev/dl/go1.27.4.windows-amd64.zip",
+    "sha256": "178ab98950ac69ab25069307dc6ade79f3816e414cce95b4da166a115cde1e7e"
+  },
+  "items": [
+    {
+      "id": "vive",
+      "name": "ViVe (ViVeTool v0.3.3)",
+      "repository": "https://github.com/thebookisclosed/ViVe.git",
+      "tag": "v0.3.3",
+      "commit": "97195a452776534c2c5973afd5b70e4ac9d3e3a9",
+      "path": "",
+      "target": "ViVe-v0.3.3",
+      "license": "GPL-3.0",
+      "licenseFile": "LICENSE"
+    },
+    {
+      "id": "multichoice",
+      "name": "Multi-Choice v0.4 (Atlas-OS/utilities)",
+      "repository": "https://github.com/Atlas-OS/utilities.git",
+      "commit": "17ec216d607a439ba4b90977bfebd597db1d5799",
+      "path": "multichoice",
+      "target": "Multi-Choice",
+      "license": "GPL-3.0",
+      "licenseFile": "LICENSE",
+      "treeProof": {
+        "tag": "multichoice-v0.4",
+        "tagCommit": "4c5241fad28e1f52120ba1fc43920af62dcfbcb4",
+        "tree": "42ed56e924739bebddddb07316b18e827cd1a872"
+      },
+      "goVendor": true
+    },
+    {
+      "id": "newtonsoft",
+      "name": "Newtonsoft.Json 13.0.3 (licence text only)",
+      "repository": "https://github.com/JamesNK/Newtonsoft.Json.git",
+      "tag": "13.0.3",
+      "commit": "0a2e291c0d9c0c7675d445703e51750363a549ef",
+      "licenseOnly": "LICENSE.md",
+      "licenseSha256": "D7F83BBEA3264A8E23D7739E44D9DB1A4994B357274DF6F00876EB2E623827AD",
+      "target": "Newtonsoft.Json-13.0.3",
+      "license": "MIT"
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+readme:
+- changed-files:
+  - any-glob-to-any-file: '**/README.md'
+
+docs:
+- changed-files:
+  - any-glob-to-any-file:
+    - docs/**/*
+    - app/docs/**/*
+    - .markdownlint-cli2.jsonc
+    - lychee.toml
+    - .vale.ini
+    - .github/vale/**/*
+
+actions:
+- changed-files:
+  - any-glob-to-any-file:
+    - .github/workflows/**/*
+    - .github/requirements-ci.txt
+    - .github/labeler.yml
+
+# Vanta package
+
+package:
+- changed-files:
+  - any-glob-to-any-file: package/**/*
+
+appx:
+- changed-files:
+  - any-glob-to-any-file:
+    - package/Executables/VantaModules/Scripts/Install/Phases/Invoke-AppxSupportPhase.ps1
+    - package/Executables/VantaModules/Scripts/Modules/Vanta.Appx/**/*
+
+components:
+- changed-files:
+  - any-glob-to-any-file: package/Executables/VantaModules/Scripts/Install/Phases/Invoke-ComponentsPhase.ps1
+
+services:
+- changed-files:
+  - any-glob-to-any-file:
+    - package/Executables/VantaModules/Scripts/Install/Phases/Invoke-ServicesPhase.ps1
+    - package/Executables/VantaModules/Scripts/Modules/Vanta.Services/**/*
+
+tweaks:
+- changed-files:
+  - any-glob-to-any-file:
+    - package/Executables/VantaModules/Scripts/Install/Phases/Invoke-TweaksPhase.ps1
+    - package/Executables/VantaModules/Scripts/Modules/Vanta.Tweaks/**/*
+    - package/Executables/VantaModules/Scripts/Tweaks/**/*
+
+desktop folder:
+- changed-files:
+  - any-glob-to-any-file: package/Executables/VantaDesktop/**/*
+
+build tooling:
+- changed-files:
+  - any-glob-to-any-file:
+    - tools/**/*
+    - app/tools/**/*
+    - build.cmd
+    - build.sh
+
+tests:
+- changed-files:
+  - any-glob-to-any-file: tests/**/*
+
+# Vanta Manager and the report service
+
+app:
+- changed-files:
+  - any-glob-to-any-file: app/**/*
+
+reports service:
+- changed-files:
+  - any-glob-to-any-file: services/**/*

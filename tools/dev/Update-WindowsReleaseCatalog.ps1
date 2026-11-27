@@ -1,0 +1,56 @@
+<#
+.SYNOPSIS
+    Regenerates windows-releases.json, the catalog of published Windows 11 releases that
+    Vanta checks Windows builds against.
+.DESCRIPTION
+    Reads the Markdown source of Microsoft's Windows 11 release information page and
+    writes, for each build, its General Availability versions with their dates and KB
+    articles. The catalog records the source's commit, SHA-256 and update time. Review
+    the catalog diff before publishing it; docs/windows-release-policy.md has the steps.
+.PARAMETER MarkdownPath
+    A saved copy of the page's Markdown source.
+.PARAMETER Refresh
+    Downloads the Markdown source from Microsoft Learn instead.
+.PARAMETER AsOfDate
+    Leaves out versions made available after this date. Defaults to today (UTC).
+.PARAMETER Build
+    The Windows builds to include.
+.PARAMETER OutputPath
+    The catalog to write. Defaults to Scripts\Compatibility\windows-releases.json in the
+    Vanta package.
+.NOTES
+    Exit codes: 0 the catalog was written, 1 the source could not be read or parsed.
+#>
+[CmdletBinding(DefaultParameterSetName = 'File')]
+param(
+    [Parameter(Mandatory, ParameterSetName = 'File')][string]$MarkdownPath,
+    [Parameter(Mandatory, ParameterSetName = 'Refresh')][switch]$Refresh,
+    [datetime]$AsOfDate = [datetime]::UtcNow.Date,
+    [ValidateSet(26200,26300)][int[]]$Build = @(26200,26300),
+    [string]$OutputPath = (Join-Path $PSScriptRoot '../../package/Executables/VantaModules/Scripts/Compatibility/windows-releases.json')
+)
+$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '../../package/Executables/VantaModules/Scripts/Compatibility/Windows-Release.ps1')
+$markdown = if ($Refresh) { Get-VantaWindowsReleaseMarkdown } else { [IO.File]::ReadAllText((Resolve-Path -LiteralPath $MarkdownPath).Path) }
+$builds = @($Build | Sort-Object -Unique)
+$releases = @(foreach ($buildNumber in $builds) { ConvertFrom-VantaWindowsReleaseMarkdown -Markdown $markdown -AsOfDate $AsOfDate -Build $buildNumber })
+$commit = [regex]::Match($markdown, '(?m)^git_commit_id: ([0-9a-f]{40})\s*$').Groups[1].Value
+$updated = [regex]::Match($markdown, '(?m)^updated_at: ([^\r\n]+)').Groups[1].Value.Trim()
+if (-not $commit -or -not $updated) { throw 'Official source metadata is missing; review the source format.' }
+$sha = [Security.Cryptography.SHA256]::Create()
+try { $hash = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($markdown)))).Replace('-', '') }
+finally { $sha.Dispose() }
+$catalog = [ordered]@{
+    schemaVersion = 2
+    product = 'Windows 11'
+    supportedReleases = @(foreach ($buildNumber in $builds) { [ordered]@{ release = if ($buildNumber -eq 26200) { '25H2' } else { '26H2' }; build = $buildNumber } })
+    sourceUrl = 'https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information'
+    sourceCommit = $commit
+    sourceSha256 = $hash
+    updatedAt = $updated
+    asOfDate = $AsOfDate.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+    releases = $releases
+}
+$text = ($catalog | ConvertTo-Json -Depth 5).Replace("`r`n", "`n") + "`n"
+[IO.File]::WriteAllText([IO.Path]::GetFullPath($OutputPath), $text, [Text.UTF8Encoding]::new($false))
+Write-Output "Wrote $($releases.Count) published versions for builds $($builds -join ', '). Review the catalog diff before publishing."

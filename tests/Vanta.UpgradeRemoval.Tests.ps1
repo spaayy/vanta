@@ -1,0 +1,340 @@
+BeforeAll {
+    . (Join-Path $PSScriptRoot 'VantaTestHost.ps1')
+    $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).ProviderPath
+    $script:ScriptsRoot = Join-Path $script:RepoRoot `
+        'package\Executables\VantaModules\Scripts'
+    $script:PreviousInstallScript = Join-Path $script:ScriptsRoot `
+        'Install\Tasks\Remove-PreviousVantaInstall.ps1'
+    $script:VersionSpecificScript = Join-Path $script:ScriptsRoot `
+        'Tweaks\misc\delete-windows-specific-files.ps1'
+    $script:TrustBootstrap = Join-Path $script:ScriptsRoot `
+        'Initialize-VantaPowerShell.ps1'
+    $script:PowerShell51 = [IO.Path]::Combine(
+        [Environment]::SystemDirectory,
+        'WindowsPowerShell',
+        'v1.0',
+        'powershell.exe'
+    )
+
+    # Both executors hard-code the live Windows directory. Rehost them against a
+    # TestDrive root through an environment hook, and fail if that anchor drifts.
+    $script:WindowsPathExpression = "[Environment]::GetFolderPath('Windows')"
+    function ConvertTo-RehostedRemovalScript {
+        param([Parameter(Mandatory = $true)][string]$Path)
+
+        $source = [IO.File]::ReadAllText($Path)
+        if (-not $source.Contains($script:WindowsPathExpression)) {
+            throw "The removal script '$Path' no longer anchors on the Windows directory expression this harness rewrites."
+        }
+        return $source.Replace($script:WindowsPathExpression, '$env:VANTA_TEST_WINDIR')
+    }
+
+    $harnessRoot = Join-Path $TestDrive 'Harness'
+    # Remove-PreviousVantaInstall.ps1 resolves the trust bootstrap two levels above
+    # itself, so the harness mirrors the installed Install\Tasks layout.
+    $null = New-Item -Path (Join-Path $harnessRoot 'Install\Tasks') -ItemType Directory -Force
+    $script:RehostedPreviousInstall = Join-Path $harnessRoot `
+        'Install\Tasks\Remove-PreviousVantaInstall.ps1'
+    [IO.File]::WriteAllText(
+        $script:RehostedPreviousInstall,
+        (ConvertTo-RehostedRemovalScript -Path $script:PreviousInstallScript)
+    )
+    Copy-Item -LiteralPath $script:TrustBootstrap `
+        -Destination (Join-Path $harnessRoot 'Initialize-VantaPowerShell.ps1')
+
+    $script:VersionSpecificBlock = [scriptblock]::Create(
+        (ConvertTo-RehostedRemovalScript -Path $script:VersionSpecificScript)
+    )
+
+    function Invoke-PreviousInstallRemoval {
+        param([Parameter(Mandatory = $true)][string]$WindowsRoot)
+
+        $env:VANTA_TEST_WINDIR = $WindowsRoot
+        $savedPreference = $ErrorActionPreference
+        try {
+            # Capture expected native failures under CI's Stop preference.
+            $ErrorActionPreference = 'Continue'
+            $output = & $script:PowerShell51 -NoProfile -NoLogo -NonInteractive `
+                -ExecutionPolicy Bypass -File $script:RehostedPreviousInstall 2>&1
+            return [pscustomobject]@{
+                ExitCode = $LASTEXITCODE
+                Output   = ($output | Out-String)
+            }
+        }
+        finally {
+            $ErrorActionPreference = $savedPreference
+            Remove-Item Env:\VANTA_TEST_WINDIR -ErrorAction SilentlyContinue
+        }
+    }
+
+    function New-UpgradeWindowsFixture {
+        param([Parameter(Mandatory = $true)][string]$Name)
+
+        $windowsRoot = Join-Path $TestDrive $Name
+        foreach ($child in @(
+                'VantaDesktop\1. Software'
+                'VantaModules\Scripts'
+                'UnrelatedComponent'
+            )) {
+            $null = New-Item -Path (Join-Path $windowsRoot $child) -ItemType Directory -Force
+        }
+        [IO.File]::WriteAllText((Join-Path $windowsRoot 'VantaDesktop\1. Software\launcher.cmd'), 'x')
+        [IO.File]::WriteAllText((Join-Path $windowsRoot 'VantaModules\Scripts\helper.ps1'), 'x')
+        [IO.File]::WriteAllText((Join-Path $windowsRoot 'UnrelatedComponent\keep.dat'), 'x')
+        [IO.File]::WriteAllText((Join-Path $windowsRoot 'notepad.exe.txt'), 'x')
+        return $windowsRoot
+    }
+}
+
+Describe 'Previous-install file removal' {
+    It 'preserves device service backups byte for byte while removing old code' {
+        $windowsRoot = New-UpgradeWindowsFixture -Name 'WinDirBackups'
+        $other = Join-Path $windowsRoot 'VantaModules\Other'
+        $null = New-Item -Path $other -ItemType Directory
+        foreach ($name in @('winServices.reg', 'vantaServices.reg')) {
+            [IO.File]::WriteAllText((Join-Path $other $name), "original $name")
+        }
+        [IO.File]::WriteAllText((Join-Path $other 'old-helper.cmd'), 'old code')
+
+        $result = Invoke-PreviousInstallRemoval -WindowsRoot $windowsRoot
+
+        $result.ExitCode | Should -Be 0 -Because $result.Output
+        foreach ($name in @('winServices.reg', 'vantaServices.reg')) {
+            [IO.File]::ReadAllText((Join-Path $other $name)) | Should -BeExactly "original $name"
+        }
+        Test-Path (Join-Path $other 'old-helper.cmd') | Should -BeFalse
+        Test-Path (Join-Path $windowsRoot 'VantaModules\Scripts') | Should -BeFalse
+        Test-Path (Join-Path $windowsRoot 'VantaDesktop') | Should -BeFalse
+        Test-Path (Join-Path $windowsRoot 'UnrelatedComponent\keep.dat') | Should -BeTrue
+    }
+
+    It 'keeps the logs byte for byte on every update, with or without service backups: backups <Backups>' -TestCases @(
+        @{ Backups = $false }, @{ Backups = $true }
+    ) {
+        param($Backups)
+        $windowsRoot = New-UpgradeWindowsFixture -Name "WinDirLogs$Backups"
+        $logs = Join-Path $windowsRoot 'VantaModules\Logs'
+        $null = New-Item -Path (Join-Path $logs 'install') -ItemType Directory -Force
+        $bytes = [byte[]](0xEF, 0xBB, 0xBF, 0x5B, 0x30, 0x5D, 0x0D, 0x0A, 0x00, 0xFF)
+        [IO.File]::WriteAllBytes((Join-Path $logs 'install\vanta-install.log'), $bytes)
+        [IO.File]::WriteAllText((Join-Path $logs 'install\20261001-101500-Tweaks-qol-Admin.log'), 'an earlier install')
+        if ($Backups) {
+            $null = New-Item -Path (Join-Path $windowsRoot 'VantaModules\Other') -ItemType Directory
+            [IO.File]::WriteAllText((Join-Path $windowsRoot 'VantaModules\Other\winServices.reg'), 'original')
+            [IO.File]::WriteAllText((Join-Path $windowsRoot 'VantaModules\Other\old-helper.cmd'), 'old code')
+        }
+
+        $result = Invoke-PreviousInstallRemoval -WindowsRoot $windowsRoot
+
+        $result.ExitCode | Should -Be 0 -Because $result.Output
+        [IO.File]::ReadAllBytes((Join-Path $logs 'install\vanta-install.log')) | Should -Be $bytes
+        [IO.File]::ReadAllText((Join-Path $logs 'install\20261001-101500-Tweaks-qol-Admin.log')) | Should -BeExactly 'an earlier install'
+        $expected = if ($Backups) { @('Logs', 'Other') } else { @('Logs') }
+        @(Get-ChildItem -LiteralPath (Join-Path $windowsRoot 'VantaModules') -Force | ForEach-Object Name | Sort-Object) |
+            Should -Be $expected -Because 'old code still goes'
+        if ($Backups) {
+            Test-Path (Join-Path $windowsRoot 'VantaModules\Other\winServices.reg') | Should -BeTrue
+            Test-Path (Join-Path $windowsRoot 'VantaModules\Other\old-helper.cmd') | Should -BeFalse
+        }
+        Test-Path -LiteralPath (Join-Path $windowsRoot 'VantaDesktop') | Should -BeFalse
+    }
+
+    It 'refuses to keep the logs through a reparse point' {
+        $windowsRoot = New-UpgradeWindowsFixture -Name 'WinDirLogsJunction'
+        $elsewhere = Join-Path $TestDrive 'LogsElsewhere'
+        $null = New-Item -Path $elsewhere -ItemType Directory -Force
+        [IO.File]::WriteAllText((Join-Path $elsewhere 'keep.txt'), 'not Vanta''s')
+        try {
+            New-Item -Path (Join-Path $windowsRoot 'VantaModules\Logs') -ItemType Junction -Value $elsewhere -ErrorAction Stop | Out-Null
+        }
+        catch {
+            Set-ItResult -Skipped -Because 'this host cannot create junctions'
+            return
+        }
+
+        $result = Invoke-PreviousInstallRemoval -WindowsRoot $windowsRoot
+
+        $result.ExitCode | Should -Not -Be 0
+        $result.Output | Should -Match 'reparse point'
+        Test-Path -LiteralPath (Join-Path $elsewhere 'keep.txt') | Should -BeTrue
+    }
+
+    It 'removes both Vanta folders and leaves every sibling intact' {
+        $windowsRoot = New-UpgradeWindowsFixture -Name 'WinDirFull'
+
+        $result = Invoke-PreviousInstallRemoval -WindowsRoot $windowsRoot
+
+        $result.ExitCode | Should -Be 0 -Because $result.Output
+        Test-Path -LiteralPath (Join-Path $windowsRoot 'VantaDesktop') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $windowsRoot 'VantaModules') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $windowsRoot 'UnrelatedComponent\keep.dat') |
+            Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $windowsRoot 'notepad.exe.txt') | Should -BeTrue
+    }
+
+    It 'succeeds when no previous Vanta files exist' {
+        $windowsRoot = Join-Path $TestDrive 'WinDirClean'
+        $null = New-Item -Path (Join-Path $windowsRoot 'UnrelatedComponent') `
+            -ItemType Directory -Force
+
+        $result = Invoke-PreviousInstallRemoval -WindowsRoot $windowsRoot
+
+        $result.ExitCode | Should -Be 0 -Because $result.Output
+        Test-Path -LiteralPath (Join-Path $windowsRoot 'UnrelatedComponent') | Should -BeTrue
+    }
+
+    It 'fails explicitly when an Vanta file cannot be deleted' {
+        $windowsRoot = New-UpgradeWindowsFixture -Name 'WinDirLocked'
+        $lockedPath = Join-Path $windowsRoot 'VantaModules\Scripts\locked.dat'
+        [IO.File]::WriteAllText($lockedPath, 'locked')
+        $lock = [IO.File]::Open(
+            $lockedPath,
+            [IO.FileMode]::Open,
+            [IO.FileAccess]::Read,
+            [IO.FileShare]::Read
+        )
+        try {
+            $result = Invoke-PreviousInstallRemoval -WindowsRoot $windowsRoot
+        }
+        finally {
+            $lock.Dispose()
+        }
+
+        $result.ExitCode | Should -Not -Be 0
+        $result.Output | Should -Match 'locked\.dat'
+        Test-Path -LiteralPath $lockedPath | Should -BeTrue
+    }
+
+    It 'fails explicitly when the Windows directory is unavailable' {
+        $result = Invoke-PreviousInstallRemoval `
+            -WindowsRoot (Join-Path $TestDrive 'DoesNotExist')
+
+        $result.ExitCode | Should -Not -Be 0
+        $result.Output | Should -Match 'is not available'
+    }
+}
+
+Describe 'Vanta file copy' {
+    BeforeAll {
+        # Copy-VantaPackage.ps1 finds the staged files four levels above itself and
+        # the trust bootstrap two levels above, so the harness mirrors that layout.
+        $script:CopyScript = Join-Path $script:ScriptsRoot 'Install\Tasks\Copy-VantaPackage.ps1'
+        $script:Staged = Join-Path $TestDrive 'Staged\Executables'
+        $tasks = Join-Path $script:Staged 'VantaModules\Scripts\Install\Tasks'
+        $null = New-Item -Path $tasks, (Join-Path $script:Staged 'VantaDesktop\1. Software'), (Join-Path $script:Staged 'Themes'), (Join-Path $script:Staged 'VantaModules\Logs') -ItemType Directory -Force
+        [IO.File]::WriteAllText((Join-Path $tasks 'Copy-VantaPackage.ps1'), (ConvertTo-RehostedRemovalScript -Path $script:CopyScript))
+        Copy-Item -LiteralPath $script:TrustBootstrap -Destination (Join-Path $script:Staged 'VantaModules\Scripts\Initialize-VantaPowerShell.ps1')
+        [IO.File]::WriteAllText((Join-Path $script:Staged 'VantaModules\Logs\install-run.log'), 'the staged copy, still being written')
+        [IO.File]::WriteAllText((Join-Path $script:Staged 'VantaModules\Scripts\new.ps1'), 'new code')
+        [IO.File]::WriteAllText((Join-Path $script:Staged 'VantaDesktop\1. Software\launcher.cmd'), 'new launcher')
+        [IO.File]::WriteAllText((Join-Path $script:Staged 'Themes\vanta.theme'), 'theme')
+    }
+
+    It 'copies Vanta''s new files without copying the staged logs over the machine''s' {
+        $windowsRoot = Join-Path $TestDrive 'CopyWindows'
+        $null = New-Item -Path (Join-Path $windowsRoot 'VantaModules\Logs') -ItemType Directory -Force
+        [IO.File]::WriteAllText((Join-Path $windowsRoot 'VantaModules\Logs\install-run.log'), 'the machine''s own')
+
+        $env:VANTA_TEST_WINDIR = $windowsRoot
+        $savedPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $output = & $script:PowerShell51 -NoProfile -NoLogo -NonInteractive -ExecutionPolicy Bypass `
+                -File (Join-Path $script:Staged 'VantaModules\Scripts\Install\Tasks\Copy-VantaPackage.ps1') 2>&1
+            $exitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $savedPreference
+            Remove-Item Env:\VANTA_TEST_WINDIR -ErrorAction SilentlyContinue
+        }
+
+        $exitCode | Should -Be 0 -Because ($output | Out-String)
+        [IO.File]::ReadAllText((Join-Path $windowsRoot 'VantaModules\Logs\install-run.log')) | Should -BeExactly 'the machine''s own'
+        [IO.File]::ReadAllText((Join-Path $windowsRoot 'VantaModules\Scripts\new.ps1')) | Should -BeExactly 'new code'
+        [IO.File]::ReadAllText((Join-Path $windowsRoot 'VantaDesktop\1. Software\launcher.cmd')) | Should -BeExactly 'new launcher'
+        Test-Path -LiteralPath (Join-Path $windowsRoot 'Resources\Themes\vanta.theme') | Should -BeTrue
+    }
+
+    It 'creates no Logs folder for a first installation' {
+        $windowsRoot = Join-Path $TestDrive 'CopyFreshWindows'
+        $null = New-Item -Path $windowsRoot -ItemType Directory -Force
+        $env:VANTA_TEST_WINDIR = $windowsRoot
+        try {
+            & $script:PowerShell51 -NoProfile -NoLogo -NonInteractive -ExecutionPolicy Bypass `
+                -File (Join-Path $script:Staged 'VantaModules\Scripts\Install\Tasks\Copy-VantaPackage.ps1') 2>&1 | Out-Null
+            $LASTEXITCODE | Should -Be 0
+        }
+        finally { Remove-Item Env:\VANTA_TEST_WINDIR -ErrorAction SilentlyContinue }
+        Test-Path -LiteralPath (Join-Path $windowsRoot 'VantaModules\Scripts\new.ps1') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $windowsRoot 'VantaModules\Logs') | Should -BeFalse
+    }
+}
+
+Describe 'Version-specific file removal' {
+    BeforeEach {
+        $script:windowsRoot = Join-Path $TestDrive ('VsWinDir-' + [Guid]::NewGuid().ToString('N'))
+        $script:startMenuRoot = Join-Path $script:windowsRoot `
+            'VantaDesktop\4. Interface Tweaks\Start Menu'
+        $env:VANTA_TEST_WINDIR = $script:windowsRoot
+    }
+
+    AfterEach {
+        Remove-Item Env:\VANTA_TEST_WINDIR -ErrorAction SilentlyContinue
+    }
+
+    It 'removes only Open-Shell entries from the Start Menu folder' {
+        $null = New-Item -Path $script:startMenuRoot -ItemType Directory -Force
+        $null = New-Item -Path (Join-Path $script:startMenuRoot 'Open-Shell Skins') `
+            -ItemType Directory -Force
+        [IO.File]::WriteAllText(
+            (Join-Path $script:startMenuRoot 'Open-Shell Skins\skin.txt'), 'x')
+        [IO.File]::WriteAllText(
+            (Join-Path $script:startMenuRoot 'Enable Open-Shell.cmd'), 'x')
+        [IO.File]::WriteAllText(
+            (Join-Path $script:startMenuRoot 'Keep Start Tweak.cmd'), 'x')
+        $sibling = Join-Path $script:windowsRoot `
+            'VantaDesktop\4. Interface Tweaks\Taskbar\Open-Shell lookalike.cmd'
+        $null = New-Item -Path (Split-Path -Parent $sibling) -ItemType Directory -Force
+        [IO.File]::WriteAllText($sibling, 'x')
+
+        & $script:VersionSpecificBlock
+
+        Test-Path -LiteralPath (Join-Path $script:startMenuRoot 'Open-Shell Skins') |
+            Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $script:startMenuRoot 'Enable Open-Shell.cmd') |
+            Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $script:startMenuRoot 'Keep Start Tweak.cmd') |
+            Should -BeTrue
+        Test-Path -LiteralPath $sibling | Should -BeTrue
+    }
+
+    It 'returns quietly when the Start Menu folder is absent' {
+        $null = New-Item -Path (Join-Path $script:windowsRoot 'VantaDesktop') `
+            -ItemType Directory -Force
+
+        { & $script:VersionSpecificBlock } | Should -Not -Throw
+    }
+
+    It 'reports an undeletable Open-Shell entry as a terminating error' {
+        $null = New-Item -Path $script:startMenuRoot -ItemType Directory -Force
+        $lockedPath = Join-Path $script:startMenuRoot 'Open-Shell locked.cmd'
+        [IO.File]::WriteAllText($lockedPath, 'locked')
+        $keeper = Join-Path $script:startMenuRoot 'Keep Start Tweak.cmd'
+        [IO.File]::WriteAllText($keeper, 'x')
+        $lock = [IO.File]::Open(
+            $lockedPath,
+            [IO.FileMode]::Open,
+            [IO.FileAccess]::Read,
+            [IO.FileShare]::Read
+        )
+        try {
+            { & $script:VersionSpecificBlock } | Should -Throw
+        }
+        finally {
+            $lock.Dispose()
+        }
+
+        Test-Path -LiteralPath $lockedPath | Should -BeTrue
+        Test-Path -LiteralPath $keeper | Should -BeTrue
+    }
+}

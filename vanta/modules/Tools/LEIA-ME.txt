@@ -1,0 +1,4 @@
+Vanta Tools - marcador de instalacao
+====================================
+Esta pasta recebe o vanta-tools.exe (Rust) na fase F5. Enquanto ele nao existir,
+a fase Atalhos nao cria atalho nem RunOnce e registra um aviso no log do Vanta.

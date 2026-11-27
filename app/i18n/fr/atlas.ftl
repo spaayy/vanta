@@ -1,0 +1,1316 @@
+### Vanta Manager: French (fr). Preview translation, revised on 1 October 2026 from the en-GB source (i18n/en-GB/atlas.ftl).
+###
+### Conventions pour cette langue : vouvoiement ; espace insécable (U+00A0) avant
+### « : ; ? ! » et à l'intérieur des guillemets « » ; apostrophe typographique (’) ;
+### boutons à l'infinitif ; titres et libellés sans point final ; « relancer »
+### désigne l'application Vanta, « redémarrer » désigne le PC ou Windows.
+### Le fichier .vantapkg est le « package Vanta » (masculin), puis « le package ».
+### Les interrupteurs de Sécurité Windows sont des « paramètres de protection ».
+
+## Partagé
+
+app-name = Vanta Manager
+common-done = Terminé
+common-cancel = Annuler
+common-back = Retour
+common-next = Continuer
+common-dismiss = Ignorer
+# Lien à côté d'une ligne de résumé qui ramène à ce choix.
+common-change = Modifier
+common-copy = Copier
+# Affiché lorsqu'une liste d'options est vide.
+common-none = Aucune
+# Nom accessible de la flèche de retour sur les pages Installation et Paramètres.
+common-back-to-home = Retour à l’accueil
+# Nom accessible du bouton d'engrenage dans la barre de titre.
+common-settings = Paramètres
+common-close-settings = Fermer les paramètres
+common-open-windows-security = Ouvrir Sécurité Windows
+common-restart-as-administrator = Relancer en tant qu’administrateur
+common-try-again = Réessayer
+common-show-details = Afficher les détails
+common-hide-details = Masquer les détails
+# Accessible name of a Show details or Hide details toggle. $action is common-show-details or
+# common-hide-details; $section is the title of the card it opens.
+common-details-a11y = { $action }, { $section }
+common-open-log-file = Ouvrir le fichier journal
+# Nom accessible du bouton Copier à côté du journal d'installation.
+common-copy-install-log = Copier le journal d’installation
+common-install-log = Journal d’installation
+# Libellés de ligne dans les cartes de résumé.
+common-windows = Windows
+common-options = Options
+common-package = Fichiers d’installation
+common-installed-as = Type d’installation
+common-installed = Installé
+common-checking = Vérification en cours
+# Sépare deux éléments d'une liste : « Brave, Firefox ». Les accolades conservent l'espace.
+list-separator = { ", " }
+# Relie deux alternatives : « 26100 ou 26200 ».
+list-or = { $a } ou { $b }
+list-and = { $a } et { $b }
+# Accessible name of a message bar that announces itself: its title, then its message.
+infobar-a11y = { $title }. { $message }
+
+## Fenêtre
+
+# Boîte de dialogue affichée si la fenêtre est fermée pendant une installation.
+window-close-title = Fermer la fenêtre pendant l’installation ?
+window-close-message = L’installation continue en arrière-plan. Rouvrez Vanta pour suivre sa progression et voir le résultat. Laissez votre PC allumé jusqu’à la fin.
+# Instead of window-close-message when the installation restarts the PC afterwards: only an
+# open Vanta window restarts it, so closing the window cancels that.
+window-close-message-restart = L’installation continue en arrière-plan, mais votre PC ne redémarrera pas automatiquement tant qu’Vanta est fermé. Rouvrez Vanta pour suivre sa progression et voir le résultat. Laissez votre PC allumé jusqu’à la fin.
+# La réponse sans risque dans toutes les boîtes de dialogue affichées à la fermeture de la fenêtre, y compris celles de la création d'ISO et de clé USB, des mises à jour et de l'accès à Windows Update.
+window-close-keep = Garder la fenêtre ouverte
+window-close-close = Fermer la fenêtre
+# Boîte de dialogue affichée si la fenêtre est fermée pendant les dernières vérifications, avant le démarrage du programme d'installation ; window-close-keep et window-close-close sont ses boutons.
+window-close-preparing-title = Fermer avant le début de l’installation ?
+window-close-preparing-message = Vanta vérifie encore votre PC et n’a pas commencé l’installation. Si vous fermez maintenant, l’installation ne démarrera pas. Rouvrez Vanta pour continuer.
+prepare-close-title = Des mises à jour sont encore en cours
+# "Stop updating" is prepare-stop, the dialog's other button.
+prepare-close-message = Gardez Vanta ouvert pendant les mises à jour. Si vous choisissez Arrêter les mises à jour, elles s’arrêteront après l’opération en cours et vous pourrez alors fermer Vanta.
+# Boîte de dialogue affichée si la fenêtre est fermée pendant le compte à rebours du redémarrage après une installation réussie. Ses boutons sont window-close-keep, restart-now et window-close-restart-close.
+window-close-restart-title = Fermer Vanta sans redémarrer ?
+# « Redémarrer maintenant » est restart-now, l'un des trois boutons de cette boîte de dialogue.
+window-close-restart-message = Votre PC doit redémarrer pour terminer la configuration de Vanta. Si vous fermez Vanta maintenant, il ne redémarrera pas votre PC : redémarrez-le vous-même quand vous le souhaitez. Enregistrez votre travail avant de choisir Redémarrer maintenant.
+window-close-restart-close = Fermer sans redémarrer
+# Dialog shown when the window is closed during a setup with Windows Security switches still
+# off. $switches names them as Windows Security does, joined like a list. Its buttons are
+# window-close-keep, common-open-windows-security and window-close-close.
+window-close-protection-title = Fermer Vanta avec la protection désactivée ?
+window-close-protection-message = Certaines protections de Sécurité Windows sont encore désactivées : { $switches }. Si vous ne comptez pas terminer l’installation de Vanta, réactivez-les avant de fermer. Si vous comptez la terminer, Vanta reprendra votre configuration lorsque vous le rouvrirez.
+# Le bouton Ouvrir du sélecteur de fichier pour un package Vanta (.vantapkg), à l'étape Préparation et sur la page ISO. C'est le libellé d'un bouton, donc restez bref.
+file-dialog-open-package = Ouvrir un package Vanta (.vantapkg)
+# Message affiché par Windows dans sa notification de redémarrage.
+shutdown-comment = Vanta est installé. Windows redémarre pour terminer la configuration.
+# Message affiché par Windows dans sa notification de redémarrage lorsque l'étape
+# Préparation redémarre pour terminer l'installation des mises à jour Windows.
+prepare-shutdown-comment = Vanta redémarre Windows pour terminer l’installation des mises à jour.
+
+## Système
+
+# « Windows 11 Professionnel, version 25H2 (build 26200.1234) ». Les trois valeurs sont du texte.
+system-description = { $product }, version { $version } (build { $build })
+
+## Page d'accueil
+
+home-not-installed = Bienvenue dans Vanta
+# Le titre lorsqu'Vanta Manager ne peut pas savoir ce qui est installé sur ce PC.
+home-state-unknown = Vanta sur ce PC
+# Le titre lorsqu'Vanta est installé. $version est du texte.
+home-version = Vanta { $version }
+# $date est une date formatée.
+home-installed-on = Installé le { $date }
+home-status-checking = Recherche de mises à jour
+# Pendant que le démarrage vérifie si l'installation d'une autre fenêtre est en cours.
+home-status-recovering = Recherche d’une installation en cours
+home-status-offline = Impossible de rechercher les mises à jour
+home-status-not-checked = Recherche de mises à jour non effectuée
+home-status-update = Vanta { $version } est disponible
+home-status-up-to-date = À jour
+home-status-newest = Dernière version : Vanta { $version }
+# Une installation précédente d'Vanta { $version } s'est arrêtée avant la fin.
+home-status-unfinished = Installation de Vanta { $version } inachevée
+home-check-again = Vérifier à nouveau
+# Bouton principal pendant qu'une installation est en cours ou en attente.
+home-show-install = Voir la progression
+home-continue-installing = Reprendre la configuration
+home-update-to = Mettre à jour vers Vanta { $version }
+home-reinstall = Réinstaller Vanta
+home-install = Installer Vanta
+home-finish-install = Terminer l’installation de Vanta { $version }
+home-start-over = Recommencer
+home-restart-title = Votre PC doit redémarrer
+home-security-reminder-title = Réactivez votre protection
+# Instead of home-security-reminder-title when no switch reads off but some couldn't be read
+# (with home-security-reminder-unreadable-message).
+home-security-reminder-unreadable-title = Vérifiez que votre protection est activée
+home-security-reminder-message = Vanta n’installe rien en ce moment, mais certaines protections de Sécurité Windows sont encore désactivées. Ouvrez Sécurité Windows et assurez-vous que ces paramètres sont activés : { $switches }.
+home-security-reminder-unreadable-message = Vanta n’a pas pu vérifier tous les paramètres de protection. Vérifiez dans Sécurité Windows que ces paramètres sont activés : { $switches }.
+home-elevation-title = Vanta a besoin d’une autorisation pour lancer l’installation
+home-state-error-title = Impossible de lire les informations sur votre installation de Vanta
+home-state-error-message = Votre version de Vanta, vos choix et votre historique risquent de ne pas s’afficher correctement. Choisissez Vérifier à nouveau pour réessayer. Détails : { $error }
+home-whats-new = Nouveautés de Vanta { $version }
+home-view-release = Voir les notes de version sur GitHub
+home-released = Publié le { $date }
+home-show-less = Afficher moins
+home-show-full-notes = Afficher toutes les notes de version
+home-your-install = Votre configuration Vanta
+# Vanta est installé, mais sans l'enregistrement que tient Vanta Manager (les anciennes versions n'en écrivaient pas).
+home-install-unrecorded = Ce PC ne conserve aucune trace de la façon dont Vanta a été installé. Vos choix et l’historique des installations ne peuvent donc pas être affichés.
+home-history = Historique des installations
+# Une ligne d'historique. $version est du texte, $mode l'un des messages history-mode-*, $date une date et heure formatées.
+home-history-entry = Vanta { $version } · { $mode } · { $date }
+home-how-it-works = Préparons votre PC pour Vanta
+home-step-1-detail = Vanta vérifie votre PC, installe les mises à jour en attente de Windows et du Microsoft Store, puis télécharge les fichiers d’installation. Les applications du Store peuvent se fermer et un redémarrage peut être nécessaire : enregistrez d’abord votre travail.
+# Version de test : le package Vanta est intégré, rien n'est téléchargé.
+home-step-1-detail-bundled = Vanta vérifie votre PC, installe les mises à jour en attente de Windows et du Microsoft Store, puis prépare les fichiers d’installation intégrés. Les applications du Store peuvent se fermer et un redémarrage peut être nécessaire : enregistrez d’abord votre travail.
+home-step-2-detail = Choisissez si vous conservez Microsoft Defender et les protections du processeur, comment les mises à jour Windows s’installent et quelles options facultatives ajouter.
+home-step-3-detail = Désactivez quatre paramètres de protection dans Sécurité Windows pour qu’ils ne bloquent pas l’installation. Vanta vous montre comment faire.
+home-step-4-detail =
+    { $minutes ->
+        [one] L’installation prend environ une minute. Votre PC doit ensuite redémarrer.
+       *[other] L’installation prend environ { $minutes } minutes. Votre PC doit ensuite redémarrer.
+    }
+# Nom accessible d'une étape numérotée.
+home-step-a11y = Étape { $number } : { $title }
+home-report-problem = Signaler un problème
+
+## Comment une installation a été faite (d'après le document d'état)
+
+mode-fresh = Première installation
+mode-upgrade = Mise à jour depuis une version antérieure
+mode-reapply = Réinstallation de la même version
+mode-unknown = Installation
+# Formes en minuscules utilisées dans une ligne d'historique.
+history-mode-fresh = première installation
+history-mode-upgrade = mise à jour
+history-mode-reapply = réinstallation
+history-mode-unknown = installation
+
+## Avis sur la page d'accueil
+
+notice-settings-reset-title = Vanta utilise ses paramètres par défaut
+# $error est un message d'erreur brut (texte).
+notice-settings-unreadable = Vanta n’a pas pu lire les paramètres enregistrés de l’application. Vos paramètres Windows n’ont pas changé. Détails : { $error }
+# $file est un nom de fichier (texte).
+notice-settings-damaged-kept = Le fichier de paramètres de l’application était endommagé et a été réinitialisé. Une copie de l’ancien fichier est conservée sous le nom { $file }. Détails : { $error }
+notice-settings-damaged = Le fichier de paramètres de l’application était endommagé. Vanta utilise les valeurs par défaut pour le moment. Détails : { $error }
+notice-settings-not-saved-title = Impossible d’enregistrer les paramètres de l’application
+# $error est un message d'erreur brut (texte).
+notice-settings-not-saved = Vanta n’a pas pu enregistrer vos dernières modifications : elles risquent d’être perdues à la fermeture de Vanta. Si une autre fenêtre Vanta est ouverte, fermez-la, puis refaites la modification. Détails : { $error }
+notice-session-unreadable-title = Impossible de vérifier l’installation précédente
+# $path est un chemin de fichier (texte).
+notice-session-unreadable-message = Vanta n’a pas pu déterminer si une installation précédente est encore en cours. En cas de doute, demandez de l’aide à la communauté Vanta. Ne supprimez { $path } et ne réessayez que si vous avez la certitude qu’aucune installation n’est en cours. Détails : { $error }
+
+## Élévation administrateur
+
+elevation-declined = L’autorisation n’a pas été accordée. Réessayez et choisissez Oui lorsque Windows demande si Vanta peut apporter des modifications.
+elevation-declined-continue = L’autorisation n’a pas été accordée. Réessayez et choisissez Oui lorsque Windows demande si Vanta peut apporter des modifications. Vos choix de configuration sont enregistrés.
+elevation-draft-not-saved = Vanta n’a pas pu enregistrer vos choix de configuration et n’a donc pas été relancé. Réessayez. Détails : { $error }
+# Affiché avec le bouton home-start-over.
+elevation-taken-over = Une autre fenêtre Vanta utilise désormais cette configuration, Vanta n’a donc pas été relancé. Continuez dans cette fenêtre ou choisissez Recommencer pour refaire la configuration ici.
+
+## Le parcours d'installation
+
+step-ready = Préparation
+step-options = Vos choix
+step-security = Sécurité Windows
+step-install = Installation
+install-title = Configurer Vanta
+# Nom accessible de la rangée d'étapes.
+stepper-label = Étapes de la configuration de Vanta
+# Nom accessible d'une étape. $status est l'un des messages stepper-status-*.
+stepper-step-a11y = Étape { $number } sur { $total }, { $title }, { $status }
+stepper-status-completed = terminée
+stepper-status-current = en cours
+stepper-status-upcoming = à venir
+stepper-status-attention = attention requise
+# En-tête au-dessus du contenu de chaque étape.
+step-heading = Étape { $number } sur { $total } : { $title }
+# Accessible name of the step heading on a screen of Your choices, read when it takes focus.
+# $heading is step-heading; $progress is options-progress; $question is the screen's question.
+step-heading-choice-a11y = { $heading }. { $progress } : { $question }
+# The same on the optional extras screen; $progress is options-progress-extras.
+step-heading-extras-a11y = { $heading }. { $progress }
+
+## Étape 1 : Préparation
+
+ready-banner-busy-title = Préparation de votre PC
+ready-banner-busy-message = Vanta vérifie votre PC et prépare les fichiers d’installation.
+ready-banner-blocked-title = Votre PC n’est pas encore prêt
+ready-banner-blocked-message = Corrigez les points signalés dans Vérifications du PC, puis choisissez Vérifier à nouveau.
+ready-banner-no-package-title = Téléchargez Vanta pour continuer
+ready-banner-no-package-message = Téléchargez Vanta dans Fichiers d’installation, ou choisissez Ouvrir un fichier de package si vous avez déjà un package Vanta (.vantapkg).
+# The package tried needs a newer Vanta Manager. The title is also the footer's hint then.
+ready-banner-manager-title = Téléchargez une version plus récente de Vanta Manager pour continuer
+# "Download Vanta Manager" is manager-download, the button in Installation files (package-title).
+ready-banner-manager-message = Choisissez Télécharger Vanta Manager dans Fichiers d’installation, puis utilisez la nouvelle version à la place de celle-ci.
+# Version de test : le package Vanta intégré n'a pas pu être extrait.
+ready-banner-no-package-bundled-title = Préparez le package Vanta intégré pour continuer
+ready-banner-no-package-bundled-message = Le package Vanta intégré à cette application n’est pas encore prêt. Consultez la carte Fichiers d’installation.
+ready-banner-updates-title = Mettez à jour Windows et les applications du Store pour continuer
+ready-banner-updates-message = Choisissez Rechercher et installer les mises à jour. Une fois les mises à jour terminées, Vanta vérifie à nouveau votre PC.
+# While Windows and Store apps update. "Update Windows and Store apps" is prepare-title, the
+# card further down the page.
+ready-banner-updating-title = Mise à jour de Windows et des applications du Store
+ready-banner-updating-message = Cela peut prendre du temps. Gardez Vanta ouvert. Vous pouvez suivre la progression dans « Mettre à jour Windows et les applications du Store ».
+# After Stop updating. "Check and install updates" is prepare-start, the card's button.
+ready-banner-updates-stopped-title = Mises à jour arrêtées
+ready-banner-updates-stopped-message = Choisissez Rechercher et installer les mises à jour dans « Mettre à jour Windows et les applications du Store » pour terminer.
+# Vanta reopened after restarting the PC to continue updating. "Continue updates" is
+# prepare-continue, the card's button.
+ready-banner-updates-resumed-title = Votre PC a redémarré
+ready-banner-updates-resumed-message = Choisissez Poursuivre les mises à jour dans « Mettre à jour Windows et les applications du Store » pour les terminer.
+# Under prepare-failed-title or prepare-unconfirmed-title. "Try again" is common-try-again,
+# the card's button.
+ready-banner-updates-failed-message = Consultez « Mettre à jour Windows et les applications du Store » pour savoir quoi faire, puis choisissez Réessayer.
+# Under prepare-reboot-title. "Restart and continue" is prepare-restart, the card's button.
+ready-banner-reboot-message = Enregistrez d’abord votre travail, puis choisissez Redémarrer et continuer dans « Mettre à jour Windows et les applications du Store ».
+ready-banner-warnings-title = Quelques points à vérifier
+ready-banner-warnings-message = Vous pouvez continuer, mais lisez d’abord les points signalés dans Vérifications du PC.
+ready-banner-ok-title = Vous pouvez maintenant faire vos choix
+ready-banner-ok-message = Les vérifications ont réussi et vos fichiers d’installation sont prêts.
+
+# Titre de carte et nom accessible de la liste des vérifications.
+ready-this-pc = Vérifications du PC
+ready-check-again = Vérifier à nouveau
+ready-checks-passed =
+    { $count ->
+        [one] { $count } vérification réussie
+       *[other] { $count } vérifications réussies
+    }
+
+package-title = Fichiers d’installation
+# $received et $total sont des nombres de mégaoctets formatés (texte).
+package-downloading = Téléchargement de Vanta { $version } · { $received } sur { $total } Mo
+package-unpacking-progress =
+    { $total ->
+        [one] Extraction · { $done } fichier sur { $total }
+       *[other] Extraction · { $done } sur { $total } fichiers
+    }
+package-unpacking = Extraction
+package-looking = Recherche de la dernière version de Vanta.
+# Version de test : le package Vanta intégré est en cours d'extraction, rien n'est téléchargé.
+package-looking-bundled = Préparation du package Vanta intégré.
+package-none = Téléchargez Vanta pour obtenir les fichiers d’installation. Si vous avez déjà un package Vanta (.vantapkg), ouvrez-le plutôt.
+# La recherche de version sur GitHub a échoué. « Télécharger la dernière version » est package-download-newest, le bouton proposé dans cet état ; il relance la recherche.
+package-release-failed = Vanta n’a pas pu rechercher la dernière version. Vérifiez votre connexion Internet, puis choisissez Télécharger la dernière version ou ouvrez un package Vanta (.vantapkg) déjà enregistré.
+# Mots d'état courts à côté du titre de la carte.
+package-status-downloading = Téléchargement
+package-status-unpacking = Extraction
+package-status-failed = Échec de la préparation
+package-status-ready = Prêts
+package-status-checking = Vérification
+package-status-preparing = Préparation
+package-status-missing = Non téléchargés
+# Nom accessible de la barre de progression.
+package-progress = Progression des fichiers d’installation
+package-download-again = Télécharger à nouveau
+package-download-version = Télécharger Vanta { $version }
+package-download-newest = Télécharger la dernière version
+package-cancel-download = Annuler le téléchargement
+package-open-file = Ouvrir un fichier de package
+# Provenance du package. $file est un nom de fichier, $path un chemin de dossier (texte).
+package-from-release = Vanta { $version } a été téléchargé depuis GitHub et est prêt à être installé.
+package-from-file = Vanta { $version } a été chargé depuis { $file } et est prêt à être installé.
+package-unpacked = Vanta { $version } est prêt à être installé.
+package-none-yet = Aucun fichier d’installation sélectionné
+acquire-no-asset = Vanta { $version } ne propose aucun fichier de package à télécharger. Ouvrez un package Vanta (.vantapkg) déjà enregistré pour continuer.
+# Shown for a package older than Vanta 0.6.0, and for a file that isn't an Vanta package, such as an
+# .apbx file from an Vanta release before 0.6.
+acquire-unsupported = Cette application installe Vanta 0.6.0 et versions ultérieures à partir de packages Vanta (.vantapkg).
+# Un package assez récent pour inclure le script d'installation que pilote cette application, mais qui ne le contient pas.
+acquire-incomplete = Il manque à Vanta { $version } des fichiers dont cette application a besoin pour l’installer. Téléchargez-le à nouveau ou ouvrez un autre package Vanta (.vantapkg).
+acquire-failed = Impossible de préparer les fichiers d’installation. Réessayez le téléchargement ou ouvrez un autre package Vanta (.vantapkg). Détails : { $error }
+# Le téléchargement n'a rien reçu pendant une minute et a été arrêté.
+acquire-stalled = Le téléchargement a cessé de répondre. Vérifiez votre connexion Internet, puis réessayez le téléchargement ou ouvrez un package Vanta (.vantapkg) déjà enregistré.
+# Version de test : le package Vanta intégré n'a pas pu être extrait. Réessayer est le seul bouton proposé.
+acquire-failed-bundled = Impossible de préparer le package Vanta intégré. Choisissez Réessayer. Détails : { $error }
+# The Vanta package asks for a newer Vanta Manager than this one. $version is the version it asks for,
+# such as 0.7.0. "Download Vanta Manager" is manager-download, the button beside the message.
+acquire-manager-outdated = Ce package Vanta nécessite Vanta Manager { $version } ou une version ultérieure. Choisissez Télécharger Vanta Manager, puis utilisez la nouvelle version à la place de celle-ci.
+# The same, for a package that doesn't say which version it needs.
+acquire-manager-outdated-any = Ce package Vanta nécessite une version plus récente de Vanta Manager. Choisissez Télécharger Vanta Manager, puis utilisez la nouvelle version à la place de celle-ci.
+
+## Vanta Manager plus récent
+
+# Opens the latest Vanta release on GitHub in the browser, where Vanta Manager is downloaded.
+manager-download = Télécharger Vanta Manager
+# A note on Home and in Settings that a newer Vanta Manager has been released. $version is its
+# version, such as 0.7.0. The note doesn't stop anything; manager-download is its button.
+manager-update-title = Vanta Manager { $version } est disponible
+manager-update-message = Vanta Manager ne peut pas se mettre à jour lui-même. Téléchargez la nouvelle version et utilisez-la à la place de celle-ci.
+
+## Vérifications du système
+
+check-administrator = Autorisation d’installer
+check-supported-build = Compatibilité de Windows
+check-pending-updates = Mises à jour Windows
+check-pending-reboot = Redémarrage en attente
+check-third-party-antivirus = Autre logiciel antivirus
+check-internet = Connexion Internet
+check-power = Alimentation
+check-activation = Activation de Windows
+# Nom accessible d'une ligne de vérification. $state est l'un des messages check-state-*.
+check-a11y = { $title } : { $state }
+# Fragments invariables : le titre qui précède peut être masculin ou féminin.
+check-state-checking = vérification en cours
+check-state-passed = vérification réussie
+check-state-warning = attention requise
+check-state-failed-blocking = action requise avant l’installation
+check-state-failed = attention requise
+check-state-unknown = vérification impossible
+check-fix-windows-update = Ouvrir Windows Update
+check-fix-network = Ouvrir les paramètres réseau
+check-fix-power = Ouvrir les paramètres d’alimentation
+check-fix-activation = Ouvrir les paramètres d’activation
+check-fix-apps = Ouvrir les applications installées
+# Case que l'utilisateur coche lorsque la recherche Windows Update n'a pas pu s'exécuter.
+check-ack-updates = J’ai vérifié dans Windows Update : aucune mise à jour n’est en attente d’installation
+
+detail-admin-ok = Vanta a l’autorisation d’apporter les modifications nécessaires à l’installation.
+detail-admin-missing = Relancez Vanta en tant qu’administrateur, puis choisissez Oui lorsque Windows demande l’autorisation.
+# $builds est une liste de numéros de build comme « 26100 ou 26200 » ; $build est celle de ce PC (texte).
+detail-build-unsupported = Cette version de Vanta nécessite la build Windows { $builds }. Votre PC utilise la build { $build }. Installez une version compatible de Windows avant de continuer.
+detail-build-missing = Ce package Vanta n’indique aucune build Windows prise en charge. Utilisez une build complète du package plutôt qu’une build LocalTest.
+detail-updates-none = Aucune mise à jour Windows n’est en attente d’installation.
+# $titles liste jusqu'à deux noms de mises à jour (texte) ; $count est le total.
+detail-updates-pending =
+    { $count ->
+        [1] Cette mise à jour est en attente : { $titles }. Vanta l’installe depuis « Mettre à jour Windows et les applications du Store ».
+        [2] Ces mises à jour sont en attente : { $titles }. Vanta les installe depuis « Mettre à jour Windows et les applications du Store ».
+       *[other] { $count } mises à jour sont en attente, dont { $titles }. Vanta les installe depuis « Mettre à jour Windows et les applications du Store ».
+    }
+detail-updates-unknown = Impossible de rechercher les mises à jour Windows. Ouvrez Windows Update puis, si aucune mise à jour n’est en attente, confirmez-le ci-dessous. ({ $error })
+detail-reboot-none = Windows n’a pas besoin de redémarrer pour le moment.
+detail-reboot-pending = Windows doit redémarrer pour terminer des modifications antérieures. Lorsque vous choisissez Rechercher et installer les mises à jour, Vanta vous demande d’abord de redémarrer.
+# $reasons : les marqueurs de redémarrage en attente posés par Windows, d'après les noms prepare-reason-*.
+detail-reboot-pending-reasons = Windows doit redémarrer pour terminer des modifications antérieures ({ $reasons }). Lorsque vous choisissez Rechercher et installer les mises à jour, Vanta vous demande d’abord de redémarrer.
+# Avertissement, pas un blocage : $files liste jusqu'à trois chemins de fichiers que Windows remplacera ou supprimera au prochain redémarrage.
+detail-reboot-file-renames = Vous pouvez continuer. Windows doit remplacer ou supprimer des fichiers au prochain redémarrage ({ $files }). Certaines applications, comme Xbox Gaming Services, font cela après chaque redémarrage.
+detail-reboot-unknown = Impossible de vérifier si Windows doit redémarrer. Redémarrez votre PC, puis rouvrez Vanta et vérifiez à nouveau. ({ $error })
+detail-antivirus-none = Aucun autre logiciel antivirus n’a été détecté.
+# $products est une liste de noms de produits (texte).
+detail-antivirus-found = Les applications antivirus autres que Microsoft Defender peuvent bloquer l’installation. Désinstallez { $products }, puis choisissez Vérifier à nouveau.
+# Avertissement, pas un blocage : le Centre de sécurité liste encore le produit, mais ses fichiers ont disparu.
+detail-antivirus-stale = Sécurité Windows liste encore { $products }, mais ses fichiers ont disparu : ce logiciel n’est donc plus installé. Vanta peut quand même être installé.
+detail-antivirus-unknown = Impossible de vérifier la présence d’autres antivirus. Choisissez Vérifier à nouveau. Si le problème persiste, redémarrez votre PC et vérifiez à nouveau. ({ $error })
+detail-internet-ok = Ce PC est connecté à Internet. Conservez cette connexion pendant qu’Vanta télécharge et installe des logiciels.
+detail-internet-missing = Connectez-vous à Internet, puis vérifiez à nouveau.
+detail-power-mains = Votre PC est branché sur le secteur. Laissez-le branché jusqu’à la fin de l’installation.
+detail-power-battery = Branchez votre PC sur le secteur pour qu’il reste allumé pendant toute l’installation.
+detail-power-unknown = Vanta n’a pas pu déterminer si votre PC est branché sur le secteur. S’il s’agit d’un ordinateur portable, branchez-le, puis choisissez Vérifier à nouveau. Si cela se reproduit, choisissez Envoyer un rapport.
+detail-activation-ok = Windows est activé. Vanta n’y changera rien.
+detail-activation-missing = Windows n’est pas activé. Vous pouvez continuer, mais Vanta n’activera pas Windows à votre place.
+detail-activation-no-licence = Windows n’a signalé aucune licence. Vous pouvez continuer ; Vanta ne modifiera pas l’état d’activation.
+detail-activation-unknown = Impossible de vérifier l’activation de Windows. Vous pouvez continuer ; Vanta ne modifiera pas l’état d’activation. ({ $error })
+
+## Étape 2 : Vos choix
+
+options-progress = Choix { $number } sur { $total }
+options-progress-extras = Choix { $number } sur { $total } : options facultatives
+options-change-later = Vous pourrez modifier plus tard vos choix pour Microsoft Defender, les protections du processeur et les mises à jour depuis le dossier Vanta de votre bureau.
+# Noms courts de chaque décision (lignes de résumé) et question posée par chaque écran.
+screen-defender-title = Microsoft Defender
+screen-defender-question = Conserver Microsoft Defender ?
+screen-mitigations-title = Protections du processeur
+screen-mitigations-question = Conserver les protections du processeur intégrées à Windows ?
+screen-updates-title = Windows Update
+screen-updates-question = Comment Windows doit-il installer les mises à jour ?
+screen-browser-title = Navigateur
+screen-power-title = Alimentation et sécurité
+screen-apps-title = Applications
+screen-optional-apps-title = Applications facultatives
+screen-choose-one-title = Choisissez une option
+screen-extras-title = Options facultatives
+# Question pour un choix obligatoire pour lequel cette application n'a pas de formulation spécifique.
+screen-generic-question = Choisissez une option pour { $title }
+learn-more-defender = En savoir plus sur Microsoft Defender
+learn-more-mitigations = En savoir plus sur les protections du processeur
+learn-more-updates = En savoir plus sur Windows Update
+learn-more-browser = En savoir plus sur les navigateurs
+learn-more-power = En savoir plus sur l’alimentation et la sécurité
+learn-more-apps = En savoir plus sur les applications
+learn-more-eclean = Comment eclean fonctionne avec Vanta
+learn-more-generic = Lire le guide de configuration
+# Une ligne sous la réponse choisie : ce que cela implique pour le PC.
+consequence-defender-enable = Conserve l’antivirus intégré à Windows pour aider à protéger votre PC contre les virus et autres menaces.
+consequence-defender-disable = Supprime aussi SmartScreen. Votre PC n’aura aucune protection antivirus tant que vous n’aurez pas installé une autre application antivirus, et Windows ne vous avertira pas avant que vous ouvriez des applications ou des téléchargements non reconnus.
+consequence-mitigations-default = Conserve les protections par défaut de Windows contre les failles du processeur et les attaques qui exploitent des bogues dans les applications.
+consequence-mitigations-disable = Désactive aussi Exploit Protection pour les applications, comme la Protection du flux de contrôle (CFG). Cela réduit la sécurité. L’effet sur les performances dépend de votre processeur.
+consequence-auto-updates-disable = Ouvrez régulièrement Windows Update pour installer les mises à jour. Les notifications de mise à jour restent activées.
+consequence-auto-updates-default = Windows installera les mises à jour automatiquement, y compris les correctifs de sécurité.
+
+## Texte du package Vanta
+## Libellés et descriptions des options et des questions du package Vanta,
+## selon leurs identifiants dans le fichier vanta.json du package. L'application
+## les affiche à la place du texte anglais du package ; une option ou une question
+## ajoutée par un package plus récent, sans message ici, affiche le texte anglais.
+
+package-option-defender-enable = Conserver Microsoft Defender
+package-option-defender-disable = Supprimer Microsoft Defender
+package-option-mitigations-default = Conserver les protections du processeur
+package-option-mitigations-disable = Désactiver les protections du processeur
+package-option-auto-updates-disable = Installer les mises à jour moi-même
+package-option-auto-updates-default = Installer les mises à jour automatiquement
+package-option-disable-hibernation = Désactiver la mise en veille prolongée
+
+package-option-disable-phishing-protection = Turn off Enhanced Phishing Protection (Windows stops warning when you type your password into a known phishing site)
+package-option-disable-gamebar = Turn off Game Bar and game capture
+package-option-remove-store = Remove the Microsoft Store (App Installer and winget stay)
+package-option-vanta-power = Use the Vanta power plan (desktop PCs only; skipped on laptops)
+package-option-vanta-memory = Use the Vanta memory profile (memory compression on, page combining and app pre-launch off)
+package-option-tools-on-logon = Open Vanta Tools the next time I sign in
+package-option-disable-power-saving = Désactiver les économies d’énergie
+package-option-disable-core-isolation = Désactiver la sécurité basée sur la virtualisation (VBS)
+package-option-remove-snipping-tool = Supprimer l’Outil Capture d’écran
+package-option-uninstall-edge = Supprimer Microsoft Edge
+package-option-install-another-browser = Installer un navigateur
+package-option-install-eclean = Installer eclean
+package-option-browser-brave = Brave
+package-option-browser-librewolf = LibreWolf
+package-option-browser-firefox = Firefox
+package-option-browser-chrome = Chrome
+package-choice-defender-description = Microsoft Defender est l’antivirus intégré à Windows. Ne le supprimez que si vous comprenez les risques et prévoyez d’utiliser une autre application antivirus. Quel que soit votre choix, Vanta désactive le Contrôle intelligent des applications, la Protection renforcée contre l’hameçonnage et Localiser mon appareil.
+
+package-choice-protections-description = Windows protections that stay on unless you turn them off. Nothing here is turned off by default.
+package-choice-vanta-description = Vanta extras. All are off unless you tick them.
+package-choice-mitigations-description = Ces protections, aussi appelées mesures d’atténuation de sécurité, aident à protéger votre PC contre les failles du processeur, comme Spectre et Meltdown, et contre les attaques qui exploitent des bogues dans les applications. Il est recommandé de conserver les paramètres par défaut de Windows.
+package-choice-auto-updates-description = Choisissez comment Windows installera les mises à jour une fois l'installation de Vanta terminée (contrairement à l'étape 1, qui prépare ce PC avant). Vous pouvez laisser Windows les installer automatiquement ou les installer vous-même. Dans les deux cas, Vanta maintient Windows sur sa version actuelle, qui ne reçoit des correctifs de sécurité que jusqu'à la fin du support par Microsoft. Vanta désactive aussi les mises à jour automatiques des applications du Microsoft Store ; mettez-les à jour dans le Microsoft Store.
+package-choice-browser-description = Choisissez un navigateur à installer. Vanta ne modifiera pas les paramètres de votre navigateur.
+
+## Étape 3 : Sécurité Windows
+
+security-banner-reading-title = Vérification de Sécurité Windows
+security-banner-reading-message = Vanta vérifie les quatre paramètres de protection ci-dessous.
+security-banner-off-title = Les quatre paramètres de protection sont désactivés
+# Shown instead of the switch list when Microsoft Defender isn't on this PC and the user
+# chose to remove it.
+security-banner-absent-title = Microsoft Defender n’est pas installé sur ce PC
+security-banner-absent-message = Il n’y a rien à désactiver à cette étape. Choisissez Continuer.
+security-banner-off-message = Choisissez Continuer pour vérifier votre configuration et installer Vanta.
+security-banner-on-title = Désactivez la protection antivirus dans Sécurité Windows
+security-banner-on-message = Microsoft Defender peut bloquer les modifications apportées par Vanta. Choisissez Ouvrir Sécurité Windows et désactivez chacun des paramètres ci-dessous. Si vous conservez Microsoft Defender, réactivez ces paramètres une fois l’installation terminée.
+# Le nom de la page dans Sécurité Windows.
+security-list-title = Paramètres de protection contre les virus et menaces
+security-switch-off = Désactivé
+security-switch-on = Activé
+security-switch-unreadable = Vérification impossible
+security-switch-reading = Vérification
+security-all-off = Tous désactivés
+# Nom accessible d'une ligne de paramètre. $state est l'un des messages security-switch-*.
+security-a11y = { $title } : { $state }
+# Éléments du résumé « 2 encore activés, 1 non vérifiable ».
+security-count-still-on =
+    { $count ->
+        [one] { $count } encore activé
+       *[other] { $count } encore activés
+    }
+security-count-unreadable =
+    { $count ->
+        [one] { $count } non vérifiable
+       *[other] { $count } non vérifiables
+    }
+security-count-join = { $a }, { $b }
+security-unknown-title = Confirmez les paramètres qu’Vanta n’a pas pu vérifier
+security-unknown-message = Assurez-vous que les quatre paramètres sont désactivés dans Sécurité Windows, puis confirmez-le ci-dessous.
+security-acknowledge = J’ai vérifié dans Sécurité Windows que les quatre paramètres sont désactivés
+security-unknown-unelevated-title = Vanta a besoin d’une autorisation pour vérifier la protection
+security-unknown-unelevated-message = Relancez Vanta en tant qu’administrateur pour qu’il puisse lire les paramètres de Microsoft Defender.
+# Les quatre paramètres, nommés exactement comme dans Sécurité Windows.
+protection-tamper = Protection contre les falsifications
+protection-tamper-why = Désactivez ce paramètre pour permettre à Vanta de modifier les paramètres de sécurité de Defender.
+protection-realtime = Protection en temps réel
+protection-realtime-why = Désactivez ce paramètre pour que Defender ne bloque pas les fichiers d’installation de Vanta en les analysant.
+protection-cloud = Protection dans le cloud
+protection-cloud-why = Désactivez ce paramètre pour que les vérifications en ligne des menaces ne bloquent pas les fichiers d’installation de Vanta.
+protection-samples = Envoi automatique d’un échantillon
+protection-samples-why = Empêchez Defender d’envoyer automatiquement des fichiers de Vanta à Microsoft pour analyse.
+
+## Étape 4 : Installation
+
+# Nom accessible de la barre de progression.
+install-progress = Progression de l’installation
+# La progression de l'installation affichée à côté de la barre. $percent est un nombre entier de 0 à 99.
+install-percent = { $percent } %
+outcome-succeeded-title = Vanta est installé
+outcome-lost-title = Impossible de confirmer le résultat de l’installation
+outcome-failed-title = L’installation ne s’est pas terminée
+outcome-requirements = Votre PC ne répond pas aux conditions requises pour l’installation. Aucune modification n’a été apportée. Revenez à l’étape Préparation et vérifiez à nouveau.
+# Les variantes -resumed suivent une nouvelle tentative d'une installation qu'une tentative précédente avait déjà commencé à appliquer.
+outcome-requirements-resumed = Votre PC ne répond pas aux conditions requises pour l’installation, cette tentative s’est donc arrêtée. Une tentative précédente a déjà commencé à apporter des modifications. Revenez à l’étape Préparation et vérifiez à nouveau.
+outcome-not-elevated = Vanta n’avait pas l’autorisation d’administrateur. Aucune modification n’a été apportée. Relancez Vanta en tant qu’administrateur, puis réessayez.
+outcome-not-elevated-resumed = Vanta n’avait pas l’autorisation d’administrateur, cette tentative s’est donc arrêtée. Une tentative précédente a déjà commencé à apporter des modifications. Relancez Vanta en tant qu’administrateur, puis réessayez.
+# La vérification du programme d'installation a trouvé des mises à jour Windows ou Store inachevées. L'étape Préparation propose à nouveau la recherche ; « Rechercher et installer les mises à jour » est prepare-start, son bouton dans cet état.
+outcome-preparation-stale = Vanta n’a pas pu confirmer que Windows et les applications du Store sont à jour, l’installation s’est donc arrêtée avant toute modification de Windows. Revenez à l’étape Préparation et choisissez Rechercher et installer les mises à jour.
+outcome-preparation-stale-resumed = Vanta n’a pas pu confirmer que Windows et les applications du Store sont à jour, cette tentative s’est donc arrêtée. Une tentative précédente a toutefois déjà commencé à apporter des modifications. Revenez à l’étape Préparation et choisissez Rechercher et installer les mises à jour.
+outcome-failed-preflight = L’installation s’est arrêtée avant toute modification. Vous pouvez réessayer. Si elle s’arrête de nouveau, choisissez Envoyer un rapport.
+outcome-failed-staging = L’installation s’est arrêtée pendant la préparation des fichiers, avant toute modification de Windows. Vous pouvez réessayer. Si elle s’arrête de nouveau, choisissez Envoyer un rapport.
+outcome-failed-applying = Certaines modifications ont peut-être déjà été appliquées. Vous pouvez réessayer. Si vous vous arrêtez ici, réactivez dans Sécurité Windows les protections que vous avez désactivées, si elles sont toujours disponibles.
+outcome-failed-applying-defender-removed = Certaines modifications ont peut-être déjà été appliquées. Vous pouvez réessayer. Si l’installation s’arrête de nouveau, choisissez Envoyer un rapport.
+outcome-failed-resumed = Cette tentative s’est arrêtée prématurément, mais une tentative précédente a déjà commencé à apporter des modifications. Vous pouvez réessayer. Si vous vous arrêtez ici, réactivez dans Sécurité Windows les protections que vous avez désactivées, si elles sont toujours disponibles.
+outcome-failed-resumed-defender-removed = Cette tentative s’est arrêtée prématurément, mais une tentative précédente a déjà commencé à apporter des modifications. Vous pouvez réessayer. Si l’installation s’arrête de nouveau, choisissez Envoyer un rapport.
+outcome-failed-repeated = Cette tentative s’est arrêtée sur la même erreur que la précédente, et certaines modifications ont peut-être déjà été appliquées. Réessayer sans rien changer a peu de chances d’aboutir. Choisissez Envoyer un rapport pour que l’équipe Vanta puisse en trouver la cause. Si vous vous arrêtez ici, réactivez dans Sécurité Windows les protections que vous avez désactivées, si elles sont toujours disponibles.
+outcome-failed-repeated-defender-removed = Cette tentative s’est arrêtée sur la même erreur que la précédente, et certaines modifications ont peut-être déjà été appliquées. Réessayer sans rien changer a peu de chances d’aboutir. Choisissez Envoyer un rapport pour que l’équipe Vanta puisse en trouver la cause.
+outcome-failed-repeated-apps = Windows n’a toujours pas supprimé { $apps }, cette tentative s’est donc arrêtée sur la même erreur que la précédente. Certaines modifications ont peut-être déjà été appliquées. Réessayer sans rien changer a peu de chances d’aboutir. Choisissez Envoyer un rapport pour que l’équipe Vanta puisse en trouver la cause. Si vous vous arrêtez ici, réactivez dans Sécurité Windows les protections que vous avez désactivées, si elles sont toujours disponibles.
+outcome-failed-repeated-apps-defender-removed = Windows n’a toujours pas supprimé { $apps }, cette tentative s’est donc arrêtée sur la même erreur que la précédente. Certaines modifications ont peut-être déjà été appliquées. Réessayer sans rien changer a peu de chances d’aboutir. Choisissez Envoyer un rapport pour que l’équipe Vanta puisse en trouver la cause.
+outcome-not-started = Le programme d’installation n’a pas démarré à temps. Aucune modification n’a été apportée. Vous pouvez réessayer.
+outcome-lost = Le programme d’installation s’est arrêté sans indiquer de résultat, et certaines modifications ont peut-être déjà été appliquées. Vous pouvez réessayer. Si vous vous arrêtez ici, réactivez dans Sécurité Windows les protections que vous avez désactivées, si elles sont toujours disponibles.
+outcome-lost-defender-removed = Le programme d’installation s’est arrêté sans indiquer de résultat, et certaines modifications ont peut-être déjà été appliquées. Vous pouvez réessayer. S’il s’arrête de nouveau, choisissez Envoyer un rapport.
+restart-now-message = Windows redémarre pour terminer la configuration de Vanta.
+restart-countdown =
+    { $seconds ->
+        [one] Windows redémarre dans { $seconds } seconde pour terminer la configuration de Vanta. Pour enregistrer d’abord votre travail, choisissez Redémarrer plus tard.
+       *[other] Windows redémarre dans { $seconds } secondes pour terminer la configuration de Vanta. Pour enregistrer d’abord votre travail, choisissez Redémarrer plus tard.
+    }
+restart-stopped = Redémarrage automatique annulé. Enregistrez votre travail, puis redémarrez votre PC pour terminer la configuration de Vanta.
+restart-needed = Enregistrez votre travail, puis redémarrez votre PC pour terminer la configuration de Vanta.
+restart-dont-now = Redémarrer plus tard
+restart-now = Redémarrer maintenant
+restart-start-failed = Vanta n’a pas pu redémarrer votre PC. Enregistrez votre travail, puis redémarrez-le depuis le menu Démarrer. Détails : { $error }
+preflight-title = L’installation n’a pas démarré
+preflight-invalid-options = Vanta n’a pas pu utiliser ces choix de configuration. Revenez à l’étape Vos choix pour les revoir, puis réessayez. Détails : { $error }
+# $problems est une ou deux phrases construites à partir de preflight-problem et preflight-security.
+preflight-changed = L’état de votre PC a changé depuis les vérifications précédentes. Résolvez les points suivants avant de réessayer. { $problems }
+preflight-problem = { $title } : { $detail }
+# $summary est le résumé de Sécurité Windows, par exemple « 2 encore activés ».
+preflight-security = Sécurité Windows : { $summary }.
+preflight-busy = Une autre fenêtre Vanta démarre une installation. Patientez un instant, puis choisissez à nouveau Installer Vanta.
+# Affiché avec le bouton home-start-over.
+preflight-taken-over = Une autre fenêtre Vanta utilise désormais cette configuration, l’installation n’a donc pas démarré. Continuez dans cette fenêtre ou choisissez Recommencer pour refaire la configuration ici.
+preflight-record-unreadable = Vanta n’a pas pu vérifier si l’installation précédente est encore en cours et n’en a donc pas démarré une autre. Revenez à l’étape Préparation pour savoir quoi faire ensuite. Détails : { $error }
+preflight-refused = Impossible de démarrer le programme d’installation. Aucune modification n’a été apportée. Choisissez Installer Vanta pour réessayer. Si le problème persiste, choisissez Envoyer un rapport. Détails : { $error }
+# Remplace preflight-refused lors d'une nouvelle tentative d'une installation qu'une tentative précédente avait déjà commencé à appliquer.
+preflight-refused-resumed = Impossible de démarrer le programme d’installation, cette tentative s’est donc arrêtée. Une tentative précédente a déjà commencé à apporter des modifications. Choisissez Installer Vanta pour réessayer. Si le problème persiste, choisissez Envoyer un rapport. Détails : { $error }
+go-to-ready = Revenir à l’étape Préparation
+go-to-options = Revenir à l’étape Vos choix
+# Remplace Continuer sur un choix ouvert depuis un lien Modifier de l'étape Installation, lorsque Continuer y ramène directement.
+go-to-install = Revenir à l’étape Installation
+output-problem-title = Impossible de lire la progression de l’installation
+output-problem-message = Vanta n’a pas pu lire le journal. Cela ne signifie pas que l’installation s’est arrêtée. Laissez votre PC allumé et essayez d’ouvrir le fichier journal. Détails : { $error }
+install-elevate-title = Vanta a besoin d’une autorisation pour lancer l’installation
+install-no-package-title = Choisissez d’abord vos fichiers d’installation
+install-no-package-message = Revenez à l’étape Préparation pour télécharger Vanta ou ouvrir un package Vanta (.vantapkg) enregistré.
+# Variante de install-no-package-message pour la version de test.
+install-no-package-bundled-message = Revenez à l’étape Préparation pour préparer le package Vanta intégré à cette application.
+# Étape 4 lorsque l'étape 1 n'est pas terminée pour cette session (vérifications ou mises à jour Windows) ; go-to-ready est le bouton.
+install-not-ready-title = Terminez d’abord l’étape Préparation
+install-not-ready-message = Vanta doit terminer la vérification de votre PC et la mise à jour de Windows avant de pouvoir lancer l’installation.
+install-security-title = Vérifiez la protection antivirus avant d’installer
+install-security-reading = Nouvelle vérification des quatre paramètres de protection.
+install-security-message = { $summary }. Ouvrez Sécurité Windows et assurez-vous que les quatre paramètres sont désactivés avant de lancer l’installation.
+summary-try-again = À vérifier avant de réessayer
+summary-ready = Vérifiez votre configuration Vanta
+summary-activation = Activation
+summary-activation-ok = Activé. Vanta n’y changera rien.
+summary-activation-missing = Non activé. Vous pouvez continuer, mais Vanta n’activera pas Windows.
+summary-activation-unknown = Vanta ne modifiera pas l’état d’activation de Windows.
+summary-duration = Durée estimée
+summary-duration-value =
+    { $minutes ->
+        [one] { $minutes } minute, puis un redémarrage
+       *[other] { $minutes } minutes, puis un redémarrage
+    }
+summary-restart-checkbox = Redémarrer mon PC automatiquement après l’installation
+summary-show-command = Afficher la commande d’installation
+summary-hide-command = Masquer la commande d’installation
+summary-copy-command-a11y = Copier la commande d’installation
+summary-command-unavailable = Impossible de préparer la commande d’installation. Détails : { $error }
+summary-not-chosen = Aucun choix pour le moment
+# Nom accessible d'un lien Modifier. $title est un message screen-*-title.
+summary-change-a11y = Modifier le choix { $title }
+footer-still-checking = Préparation de l’installation
+footer-fix-items = Corrigez les points signalés dans Vérifications du PC pour continuer
+footer-need-package = Téléchargez Vanta ou ouvrez un package Vanta pour continuer
+# Variante de footer-need-package pour la version de test.
+footer-need-package-bundled = Préparez le package Vanta intégré pour continuer
+footer-reading-security = Vérification des paramètres de protection
+footer-security-pending = Désactivez les quatre paramètres pour continuer
+footer-security-confirm = Pour continuer, confirmez les paramètres qu’Vanta n’a pas pu vérifier
+footer-install-ready = Enregistrez d’abord votre travail et fermez vos applications
+button-install = Installer Vanta
+log-earlier-lines =
+    { $count ->
+        [one] { $count } ligne précédente se trouve dans le fichier journal.
+       *[other] { $count } lignes précédentes se trouvent dans le fichier journal.
+    }
+# Ajouté lorsque le journal est copié. $path est un chemin de fichier (texte).
+log-full-log-note = (journal complet : { $path })
+
+## La vue d'installation en cours
+
+installing-checking-title = Dernière vérification
+installing-checking-line = Vanta vérifie votre PC avant d’apporter des modifications. Cela peut prendre un instant.
+installing-title = Installation de Vanta
+installing-phase-preflight = Vérification de votre PC et préparation des fichiers d’installation.
+installing-phase-staging = Préparation des fichiers d’installation. Laissez votre PC allumé.
+installing-phase-applying = Configuration de Windows selon vos choix. Laissez votre PC allumé et branché.
+installing-phase-done = Finalisation de l’installation. Laissez votre PC allumé.
+installing-installed-title = Vanta est installé
+# $time est une heure formatée.
+installing-started-just-now = Démarrage à { $time }, il y a moins d’une minute
+installing-started-minutes =
+    { $minutes ->
+        [one] Démarrage à { $time }, il y a une minute
+       *[other] Démarrage à { $time }, il y a { $minutes } minutes
+    }
+installing-restart-auto = Votre PC redémarrera automatiquement à la fin de l’installation. D’ici là, enregistrez votre travail dans vos autres applications.
+
+## La fenêtre « Vanta est installé » après le redémarrage
+
+installed-title-version = Vanta { $version } est installé
+installed-title = Vanta est installé
+installed-ready = C’est terminé. Votre PC est prêt à être utilisé avec Vanta.
+installed-security-message = Vous avez conservé Microsoft Defender, mais certaines de ses protections sont encore désactivées. Ouvrez Sécurité Windows et assurez-vous que ces paramètres sont activés : { $switches }.
+installed-defender-removed-title = Microsoft Defender a été supprimé
+installed-defender-removed-message = Votre PC n’aura aucune protection antivirus tant que vous n’aurez pas installé une autre application antivirus. SmartScreen a aussi été supprimé : Windows ne vous avertira donc pas avant que vous ouvriez des applications ou des téléchargements non reconnus.
+# Home and the "Vanta is installed" window, after an installation that kept Microsoft Defender,
+# when it is missing and no Vanta package removed it. Its title is security-banner-missing-title;
+# "Report a problem" is home-report-problem, its button.
+installed-defender-missing-message = Vous avez choisi de conserver Microsoft Defender, mais il est introuvable, et Vanta ne l’a pas supprimé. Si vous n’utilisez pas d’autre application antivirus, installez-en une pour protéger votre PC. Si vous n’avez pas supprimé Defender vous-même, choisissez Signaler un problème.
+
+## Paramètres
+
+settings-title = Paramètres
+settings-theme = Thème de l’application
+settings-theme-system = Comme Windows
+settings-theme-light = Clair
+settings-theme-dark = Sombre
+settings-theme-contrast-note = Vanta utilise les couleurs de votre thème de contraste Windows.
+settings-theme-mica-note = Pour afficher l’arrière-plan translucide, choisissez le même thème clair ou sombre que Windows.
+settings-language = Langue
+settings-language-system = Comme Windows
+settings-language-system-selected = { settings-language-system } ({ $language })
+# Sous « Comme Windows » : la langue que cela donne. $language est le nom de la langue dans cette langue.
+settings-language-system-detail = Avec « Comme Windows » : { $language }
+# Courte étiquette sous chaque langue traduite mais pas encore relue par un locuteur natif.
+settings-language-preview-tag = Aperçu
+# Sous la liste des langues, une seule fois, pour expliquer l'étiquette Aperçu.
+settings-language-preview-note = Les traductions marquées Aperçu n’ont pas encore été relues par un locuteur natif.
+preview-notice = { $language } est une traduction en aperçu et peut contenir des erreurs.
+preview-notice-switch = Passer en anglais
+preview-notice-language = Changer de langue
+# $tag est une balise de langue (texte).
+settings-language-unavailable = { $tag } n’est pas disponible dans cette version de Vanta. L’anglais est affiché pour le moment et votre choix de langue est conservé.
+# $languages est la liste des langues d'affichage de Windows (texte).
+settings-language-windows-unmatched = Vanta ne prend pas encore en charge vos langues d’affichage Windows ({ $languages }). L’anglais est affiché pour le moment.
+settings-language-windows-unavailable = Impossible de vérifier votre langue d’affichage Windows. Vanta utilise l’anglais pour le moment. Détails : { $error }
+# $locale est le nom du format régional dans sa propre langue, par exemple « français (France) ».
+settings-language-formats = Les nombres, les dates et les heures suivent votre format régional Windows ({ $locale }).
+# Remplace settings-language-formats lorsque le format régional écrit les dates ou les heures de droite à gauche. $locale est le nom anglais du format, par exemple « Arabic (Saudi Arabia) ».
+settings-language-formats-numbers-only = Les nombres suivent votre format régional Windows ({ $locale }). Les dates et les heures utilisent un format standard, car Vanta ne peut pas encore afficher le texte de droite à gauche.
+settings-language-contribute = Aider à traduire Vanta sur GitHub
+settings-usage-analytics = Partager avec Vanta les écrans visités, les créations d’ISO et les résultats d’installation
+settings-restart-label = Redémarrer mon PC automatiquement après l’installation
+settings-restart-locked = Vous pourrez modifier ce réglage une fois l’installation terminée.
+settings-restart-description = Lorsque cette option est activée, votre PC redémarre dans les 10 secondes suivant la fin de l’installation, ce qui ferme vos applications ouvertes. Enregistrez votre travail avant de lancer l’installation.
+settings-help = Aide et commentaires
+settings-about = À propos
+settings-about-app = Vanta Manager
+settings-about-version = Version
+settings-about-licence = Licence
+settings-about-licence-value = Vanta © contributeurs, GPL-3.0
+settings-about-gpl-link = Lire la licence GPL-3.0
+settings-about-based-on = Basé sur
+settings-about-based-on-value = Basé sur AtlasOS 0.6.0 (GPL-3.0)
+settings-about-atlas-link = AtlasOS sur GitHub
+settings-about-fonts = Polices
+settings-about-fonts-value = Geist et Geist Mono (OFL-1.1, Vercel)
+settings-about-fonts-link = Licence Geist OFL-1.1
+settings-about-source = Code source
+# $version is the Vanta release version (text).
+settings-about-source-value = Le code source complet accompagne chaque version dans Vanta-{ $version }-source.zip et Vanta-{ $version }-third-party-sources.zip.
+settings-about-source-link = Dépôt sur GitHub
+settings-about-releases-link = Versions sur GitHub
+settings-about-network = Réseau
+settings-about-network-value = Vanta interroge api.github.com uniquement pour récupérer les manifestes et versions de winget, sans envoyer de données personnelles.
+# Link that opens the third-party licence notices.
+settings-view-licences = Ouvrir THIRD-PARTY-NOTICES.txt
+# Under the links when Windows could not open the notices.
+settings-licences-failed = Impossible d’ouvrir THIRD-PARTY-NOTICES.txt. Réessayez ou cherchez le fichier dans le dossier des licences.
+settings-open-data-folder = Ouvrir le dossier de l’application
+
+## Choix facultatifs : explications affichées avant la sélection.
+
+consequence-disable-hibernation = Libère l’espace disque utilisé pour enregistrer votre session lors de la mise en veille prolongée. La veille prolongée et le démarrage rapide ne seront plus disponibles.
+consequence-disable-power-saving = Désactive les fonctions d’économie d’énergie. Votre PC peut consommer davantage, chauffer plus et avoir une autonomie réduite.
+consequence-disable-core-isolation = Désactive une couche de sécurité supplémentaire de Windows, dont l’intégrité de la mémoire. Cela réduit la protection et peut affecter les applications ou les jeux qui en ont besoin.
+consequence-remove-snipping-tool = Supprime l’application Windows de capture d’écran et d’enregistrement vidéo de l’écran.
+consequence-uninstall-edge = Supprime le navigateur Microsoft Edge. Assurez-vous d’avoir un autre navigateur ou choisissez-en un ci-dessous.
+# Instead of consequence-uninstall-edge when Vanta is installed on this PC, which has the
+# user's Edge data. "choose one below" refers to the browser choice under it.
+consequence-uninstall-edge-data = Supprime Microsoft Edge ainsi que vos favoris, votre historique et vos mots de passe enregistrés dans Edge sur ce PC. Tout ce qui n’est pas synchronisé avec votre compte Microsoft sera perdu. Assurez-vous d’avoir un autre navigateur ou choisissez-en un ci-dessous.
+# Under Remove Microsoft Edge in the Install step's summary, with a caution glyph.
+caution-uninstall-edge = Supprime vos favoris, votre historique et vos mots de passe enregistrés dans Edge sur ce PC.
+consequence-install-another-browser = Choisissez un navigateur ci-dessous et Vanta l’installera pour vous.
+consequence-install-toolbox = Ajoutez Vanta Toolbox pour gérer plus facilement vos paramètres Vanta. Toolbox est en version bêta : certaines fonctionnalités peuvent être inachevées.
+consequence-install-eclean = Un outil de maintenance de l’équipe de Vanta pour entretenir votre PC après l’installation. Examinez les fichiers inutiles et les applications au démarrage. Nécessite un compte et une connexion Internet.
+
+# Introduction sur la page d'accueil avant l'installation d'Vanta.
+home-intro = Vanta ajuste Windows pour réduire l’activité en arrière-plan et les distractions. Installez Vanta sur une nouvelle installation de Windows, avant d’y ajouter vos propres applications et fichiers.
+
+## ISO creation
+iso-home-title = Support d’installation de Windows
+iso-home-description = Créez un fichier d’installation de Windows (ISO) qui inclut Vanta, puis utilisez-le pour réinstaller Windows sur ce PC ou sur un autre.
+iso-open = Créer une ISO avec Vanta
+iso-title = Créer une ISO avec Vanta
+iso-recommended = Recommandé
+iso-admin-description = Vanta a besoin d’une autorisation d’administrateur pour lire votre ISO Windows et en créer une nouvelle. Choisissez Relancer en tant qu’administrateur, puis Oui lorsque Windows le demande.
+iso-source = ISO Windows
+iso-download-recommended = Télécharger depuis Microsoft (recommandé)
+iso-source-question = Où souhaitez-vous récupérer Windows ?
+iso-use-local = Choisir un fichier ISO
+iso-package-latest-label = Dernière version
+iso-package-latest = Dernier paquet Vanta
+iso-package-unavailable = Choisissez un paquet Vanta pour cette version de Manager.
+iso-save-name = Enregistrer sous { $name }
+iso-source-download = Télécharger Windows 11 sur le site de Microsoft
+iso-download-arch = Architecture
+iso-download-languages = Chargement des langues…
+iso-download-list-error = Impossible de charger les langues de Windows. Réessayez ou téléchargez l’ISO depuis le site de Microsoft.
+iso-download-file-error = Impossible d’enregistrer l’ISO. Vérifiez la connexion et l’espace disponible, puis réessayez avec un nouveau nom de fichier.
+iso-download-website = Ouvrir la page de téléchargement de Microsoft
+iso-download-progress = Téléchargement de Windows · { $received } sur { $total }
+iso-download-starting = Préparation du téléchargement de Windows…
+iso-output = Enregistrer la nouvelle ISO sous
+iso-no-file = Aucun fichier sélectionné
+# Nom accessible du bouton Parcourir ou Enregistrer sous à côté d'un champ de fichier : $action est le texte de ce bouton et $field le libellé du champ.
+iso-pick-a11y = { $action } : { $field }
+iso-inspect = Vérifier les fichiers
+iso-mode-title = Comment souhaitez-vous configurer Vanta ?
+iso-mode-interactive = Faire vos choix Vanta après la connexion
+iso-mode-interactive-description = Après votre connexion, Vanta s’ouvre et vous guide dans les mises à jour, vos choix et l’installation de Vanta.
+iso-mode-before = Faire vos choix Vanta maintenant
+iso-mode-before-description = Vanta enregistre vos choix dans l’ISO. Après votre connexion, Vanta s’ouvre et vous guide dans les mises à jour, puis vous installez Vanta avec ces choix.
+iso-package-unsupported-title = Choisissez un package Vanta plus récent
+iso-package-unsupported = Ce package Vanta ne peut pas enregistrer les choix Vanta dans l’ISO. Choisissez un package plus récent, ou l’option Faire vos choix Vanta après la connexion.
+# Affiché lorsque Vérifier les fichiers refuse le package Vanta ; $minimum comme pour iso-package.
+iso-failed-package-unsupported = Ce package Vanta ne permet pas de créer une ISO. Choisissez un package pour Vanta { $minimum } ou une version ultérieure.
+# Version de test : le package Vanta intégré ne peut pas être remplacé ; seul le mode après connexion reste possible.
+iso-package-unsupported-bundled-title = Les choix Vanta ne peuvent pas être enregistrés dans cette ISO
+iso-package-unsupported-bundled = Le package Vanta intégré à cette application ne prend pas en charge la configuration par ISO. Choisissez plutôt Faire vos choix Vanta après la connexion.
+iso-atlas-options = Choix Vanta
+iso-review = Vérifier l’ISO
+iso-review-description = La création de l’ISO n’installe rien sur ce PC et ne modifie pas votre ISO d’origine. Ensuite, Vanta peut copier la nouvelle ISO sur une clé USB pour que vous puissiez réinstaller Windows à partir de celle-ci.
+iso-review-files = Fichiers
+iso-step-windows = Installation de Windows
+iso-step-review = Récapitulatif
+iso-review-package = Package Vanta
+iso-review-output = Nouvelle ISO
+iso-review-editions = Éditions
+iso-edition = Édition de Windows
+iso-edition-auto = Choisir pendant l’installation de Windows
+iso-accept-terms = J’accepte les termes du contrat de licence logiciel Microsoft pour Windows
+iso-architecture-x64 = x64
+iso-architecture-arm64 = Arm64
+# Une taille de fichier ; $size est un nombre formaté (texte). Mégaoctets en dessous d'un gigaoctet.
+size-megabytes = { $size } Mo
+size-gigabytes = { $size } Go
+iso-review-account = Nom du compte
+iso-review-target = Installer sur
+iso-review-drivers = Pilotes
+iso-create = Créer l’ISO
+iso-progress-title = Création de votre ISO
+iso-stage-inspect = Vérification de votre ISO Windows
+iso-stage-copy = Copie des fichiers Windows
+iso-stage-add-atlas = Ajout de Vanta
+iso-stage-master = Écriture du fichier ISO
+iso-stage-verify = Vérification de la nouvelle ISO
+iso-stage-cleanup = Finalisation
+# Accessible name of one stage while the ISO is created. No "Step": the screen reader adds
+# "4 of 6". $status is stepper-status-completed or one of the three below.
+iso-stage-a11y = { $title }, { $status }
+iso-stage-status-current = en cours
+# The stage where creating the ISO stopped with an error.
+iso-stage-status-failed = en échec
+iso-stage-status-not-started = non commencée
+iso-progress-description = Gardez Vanta ouvert. Le traitement des images volumineuses peut prendre du temps.
+iso-cancel = Annuler la création
+iso-cancelling = En attente d’un point d’arrêt sûr
+iso-cancelled = Création de l’ISO annulée
+iso-cancelled-description = Votre ISO d’origine n’a pas été modifiée. Si des fichiers temporaires sont restés, choisissez Ouvrir le dossier des journaux pour voir où ils se trouvent.
+iso-complete = Votre ISO est prête
+iso-complete-description = Choisissez ensuite Créer une clé d’installation, et sauvegardez vos fichiers avant de réinstaller Windows.
+iso-open-folder = Afficher dans le dossier
+iso-failed = La création de l’ISO n’a pas pu aboutir
+iso-failed-description = Assurez-vous que vos fichiers se trouvent toujours à l’emplacement choisi et que le disque de destination est connecté, puis choisissez Créer l’ISO. Si l’échec persiste, choisissez Envoyer un rapport.
+# Titre lorsque l'étape Vérifier les fichiers échoue ; les messages ci-dessous en donnent la raison.
+iso-check-failed = Impossible de vérifier les fichiers
+iso-check-failed-description = Assurez-vous que l’ISO et le package Vanta se trouvent toujours à l’emplacement choisi et que leur téléchargement est terminé, puis choisissez Vérifier les fichiers. Si l’échec persiste, choisissez Envoyer un rapport.
+# Titre lorsque Windows a refusé la relance en administrateur (UAC refusé) ; elevation-declined est le message.
+iso-elevation-title = Vanta a besoin d’une autorisation pour créer une ISO
+# Raisons typées signalées par le processus de traitement de l'image.
+iso-failed-output-exists = Un fichier portant ce nom existe déjà. Choisissez Enregistrer sous et saisissez un nouveau nom de fichier.
+iso-failed-destination = Vanta ne peut pas enregistrer la nouvelle ISO à cet emplacement. Choisissez Enregistrer sous et sélectionnez un dossier de ce PC, comme Téléchargements. Les emplacements réseau et les disques au format FAT32 ou exFAT, comme beaucoup de clés USB, ne peuvent pas être utilisés.
+iso-failed-space = L’espace libre est insuffisant sur le disque de destination. Libérez de l’espace ou enregistrez la nouvelle ISO sur un autre disque.
+# Famille (Home) et LTSC sont les éditions que la création d'ISO écarte ; les autres sont des exemples d'éditions conservées. Noms tels que Windows les affiche en français.
+iso-failed-edition = Cette ISO ne contient aucune édition de Windows prise en charge. Les éditions Famille et LTSC ne sont pas prises en charge. Utilisez une ISO qui inclut une autre édition, comme Professionnel, Éducation ou Entreprise.
+iso-failed-customised = Cette ISO contient déjà des fichiers d’installation personnalisés, comme autounattend.xml. Choisissez une ISO Windows non modifiée provenant de Microsoft.
+iso-failed-windows-unsupported = Cette image Windows n’est pas prise en charge par le package Vanta. Utilisez une ISO Windows 11 64 bits non modifiée d’une version prise en charge par ce package.
+iso-failed-network-architecture = Les pilotes réseau de ce PC ne correspondent pas à l’architecture de cette ISO. Revenez en arrière et décochez Inclure les pilotes réseau de ce PC, ou choisissez une ISO pour ce PC.
+iso-failed-unstaged = Vanta n’a pas pu préparer son dossier de travail, donc rien n’a été modifié. Réessayez. Si le problème persiste, choisissez Exporter les diagnostics pour un rapport de bogue.
+iso-failed-package-changed = Le package Vanta a changé après la vérification des fichiers. Choisissez Modifier à côté de Fichiers, puis Vérifier les fichiers.
+iso-diagnostics = Ouvrir le dossier des journaux
+iso-close-title = La création de l’ISO est en cours
+iso-close-message = Gardez cette fenêtre ouverte jusqu’à la fin de la création ou de l’annulation. L’annulation attend que l’opération en cours puisse s’arrêter sans risque.
+# Sur les pages ISO et USB pendant qu'Vanta met à jour Windows, ou rétablit les paramètres Windows Update, depuis une autre page. Leurs commandes restent indisponibles jusqu'à la fin.
+iso-locked = Vanta est occupé avec Windows Update. Vous pourrez continuer ici une fois l’opération terminée.
+prepare-title = Mettre à jour Windows et les applications du Store
+prepare-description = Avant l’installation, Vanta met à jour Windows, le Microsoft Store et vos applications du Store. Les applications du Store ouvertes, comme le Bloc-notes, Paint ou le Terminal Windows, peuvent se fermer pendant leur mise à jour : enregistrez d’abord votre travail dans ces applications. Votre PC devra peut-être aussi redémarrer.
+prepare-complete = Vanta n’a plus trouvé de mises à jour Windows ou du Store à installer.
+prepare-reboot-title = Redémarrez votre PC pour continuer
+prepare-reboot = Votre PC doit redémarrer pour terminer l’installation des mises à jour. Vanta enregistre les choix que vous avez déjà faits et se rouvre après votre connexion.
+# $reasons : les marqueurs de redémarrage en attente posés par Windows, d'après les noms prepare-reason-*.
+prepare-reboot-reasons = Votre PC doit redémarrer pour terminer l’installation des mises à jour ({ $reasons }). Vanta enregistre les choix que vous avez déjà faits et se rouvre après votre connexion.
+# Sous le message de redémarrage : le bouton redémarre Windows sans compte à rebours.
+prepare-reboot-save-work = Enregistrez d’abord votre travail et fermez vos applications. Votre PC redémarre immédiatement lorsque vous choisissez Redémarrer et continuer.
+# Affiché à la place d'un nouveau redémarrage lorsque Windows en redemande un juste après avoir redémarré.
+prepare-restart-persists = Votre PC a redémarré, mais Windows indique toujours qu’un redémarrage est nécessaire ({ $reasons }) : redémarrer à nouveau n’y changera probablement rien. Choisissez Ouvrir Windows Update et terminez ce qui y est en attente, puis choisissez Réessayer. Si rien n’est en attente, choisissez Envoyer un rapport.
+# Noms des marqueurs posés par Windows lorsqu'il demande un redémarrage. Ils complètent
+# « Windows doit redémarrer (…) » ; courts et en minuscules.
+prepare-reason-servicing = la maintenance de Windows
+prepare-reason-windows-update = Windows Update
+prepare-reason-file-renames = des fichiers en attente de remplacement
+prepare-reason-update-agent = le service Windows Update
+prepare-reason-unknown = motif non indiqué
+prepare-failed = Choisissez Réessayer. En cas de nouvel échec, terminez les mises à jour restantes dans Windows Update ou le Microsoft Store, ou choisissez Envoyer un rapport.
+prepare-failed-title = Certaines mises à jour n’ont pas pu se terminer
+# La mise à jour s'est terminée sans écrire de résultat, par exemple après la fermeture d'Vanta pendant son exécution. « Rechercher et installer les mises à jour » est prepare-start.
+prepare-ended-unconfirmed = La mise à jour s’est arrêtée sans indiquer de résultat, Vanta ne peut donc pas confirmer que Windows et les applications du Store sont à jour. Choisissez Réessayer pour rechercher les mises à jour.
+prepare-unconfirmed-title = Impossible de confirmer le résultat des mises à jour
+# « Rechercher et installer les mises à jour » est prepare-start, son bouton dans cet état.
+prepare-cancelled = Les mises à jour ont été arrêtées. Certaines ont peut-être déjà été installées. Choisissez Rechercher et installer les mises à jour pour les terminer avant de continuer.
+prepare-windows-search = Recherche de mises à jour Windows…
+prepare-windows-download = Téléchargement des mises à jour Windows…
+prepare-windows-install = Installation des mises à jour Windows…
+prepare-windows-repair = Réparation préalable de Windows, qui signale des dommages pouvant empêcher l’installation des mises à jour. Cela peut prendre une demi-heure ou plus.
+prepare-store-search = Vérification du Microsoft Store…
+prepare-store-install = Mise à jour du Microsoft Store et de ses applications…
+prepare-stop-description = Vanta s’arrête une fois l’opération en cours terminée. Gardez Vanta ouvert jusque-là.
+prepare-stop = Arrêter les mises à jour
+prepare-restart = Redémarrer et continuer
+prepare-start = Rechercher et installer les mises à jour
+# Sous le bouton de préparation lorsqu'il est indisponible.
+prepare-blocked-source = Indisponible, car cette installation ne peut pas continuer. Consultez le message en haut de la page.
+# $check est le titre check-supported-build (texte).
+prepare-needs-build-check = Disponible lorsque la vérification { $check } réussit dans Vérifications du PC.
+# Sous le bouton de préparation, et sous la vérification Administrateur, tant que les fichiers d'installation sont encore en cours de téléchargement ou de décompression.
+prepare-wait-for-package = Disponible lorsque les fichiers d’installation sont prêts.
+iso-username = Nom du compte local
+iso-account-description = L’installation de Windows crée un compte local portant ce nom : vous n’avez donc pas besoin de compte Microsoft. Windows vous demandera de choisir un mot de passe lors de votre première connexion.
+iso-username-placeholder = Votre nom
+iso-account-empty = Saisissez un nom de compte local pour continuer
+iso-account-invalid = Utilisez 20 caractères au maximum, sans espace au début ni à la fin, et aucun de ces caractères : " / \ [ ] : ; | = , + * ? < > @
+iso-account-trailing-dot = Le nom ne peut pas se terminer par un point.
+iso-account-reserved = Windows utilise ce nom pour un compte intégré. Choisissez un autre nom.
+iso-terms-in-setup = Le programme d’installation de Windows vous demandera d’accepter les termes du contrat de licence.
+iso-privacy-defaults = Avec cette ISO, l’installation de Windows ignore les écrans de compte Microsoft et de confidentialité, et désactive le partage facultatif de données et les offres personnalisées.
+prepare-drivers = Comment installer les pilotes ?
+prepare-drivers-auto = Obtenir les pilotes via Windows Update
+prepare-drivers-auto-detail = Windows recherche les pilotes adaptés à votre matériel. Recommandé pour la plupart des PC.
+prepare-drivers-manual = Installer les pilotes moi-même
+prepare-drivers-manual-detail = Windows Update n’installera pas de pilotes : vous devrez les obtenir auprès du fabricant de votre PC ou de vos périphériques. Les pilotes déjà installés sont conservés.
+prepare-drivers-description = Les pilotes permettent à Windows d’utiliser votre matériel, comme la carte graphique, le son et le Wi-Fi. Si vous modifiez ce choix après la mise à jour, Vanta devra rechercher à nouveau les mises à jour.
+prepare-network-needed = Les mises à jour nécessitent une connexion Internet non limitée. Connectez-vous en Wi-Fi ou par Ethernet, puis choisissez Réessayer. Si aucun réseau Wi-Fi ne s’affiche, installez d’abord votre pilote réseau.
+# Connecté, mais Windows n'a trouvé aucun accès à Internet (portail captif, ou filtrage DNS ou pare-feu).
+prepare-network-limited = Windows indique que ce réseau n’a pas accès à Internet. Connectez-vous au réseau s’il le demande, ou vérifiez votre routeur et tout filtrage DNS ou par pare-feu, puis réessayez.
+# « Connexion limitée » est le nom de l'interrupteur dans les paramètres réseau de Windows.
+prepare-network-metered = Cette connexion est définie comme limitée ou soumise à une limite de données. Connectez-vous à un réseau non limité, ou désactivez Connexion limitée dans les paramètres réseau, puis réessayez.
+prepare-network-settings = Ouvrir les paramètres réseau
+iso-target-title = Sur quel PC allez-vous réinstaller Windows ?
+iso-target-this = Ce PC
+# Under This PC (iso-target-this), before it's chosen.
+iso-target-this-description = Vanta peut ajouter les pilotes Wi-Fi et Ethernet de ce PC à l’ISO, pour que Windows puisse se connecter à Internet dès sa réinstallation.
+iso-target-other = Un autre PC
+iso-copy-network = Inclure les pilotes réseau de ce PC
+iso-network-detail = Réutilise les pilotes Wi-Fi et Ethernet de ce PC pendant l’installation de Windows. Vous devrez ensuite vous reconnecter au Wi-Fi.
+iso-network-source = Source des pilotes réseau
+iso-network-installed = Utiliser les pilotes installés
+iso-network-updated = Rechercher d’abord sur Windows Update
+iso-network-updated-detail = Télécharge les pilotes compatibles proposés par Windows Update et conserve les pilotes installés en secours. Nécessite une connexion non limitée.
+iso-stage-network-drivers = Préparation des pilotes réseau
+iso-network-failed = Impossible de préparer les pilotes réseau. Consultez les diagnostics ou revenez en arrière pour changer l’option des pilotes réseau.
+# Under iso-complete when Include this PC's network drivers was chosen but the adapters use
+# drivers that come with Windows, so none were added.
+iso-network-inbox = Les cartes réseau de ce PC utilisent des pilotes fournis avec Windows : l’ISO n’a donc pas besoin de les inclure.
+iso-mode-desktop = Terminer la configuration avant le bureau
+iso-mode-desktop-description = Vanta enregistre vos choix dans l’ISO. Après votre connexion, Vanta termine les mises à jour et l’installation avant l’ouverture du bureau Windows.
+desktop-setup-description = Terminez la configuration du PC. Vos choix Vanta sont enregistrés ; vous pouvez revenir à Windows si nécessaire.
+desktop-setup-exit = Continuer dans Windows
+
+# Windows installation USB
+usb-title = Créer une clé d’installation
+usb-existing = Créer une clé USB depuis une ISO existante
+usb-description = Copiez une ISO sur une clé USB pour pouvoir réinstaller Windows à partir de celle-ci. Utilisez une ISO créée par Vanta pour installer Vanta en même temps.
+# Bouton qui ouvre le sélecteur de fichier pour une ISO, et bouton Ouvrir de ce sélecteur, sur les pages USB et ISO.
+usb-choose-iso = Choisir une ISO
+usb-drive = Clé USB
+usb-empty = Aucune clé USB trouvée. Branchez une clé USB d’au moins { $min } Go, puis choisissez Actualiser. Les supports de plus de { $max } To, les supports en lecture seule et le disque sur lequel Windows s’exécute ne sont pas affichés.
+usb-refresh = Actualiser
+# Affiché lorsque la liste des clés n'a pas pu être lue.
+usb-scan-failed = Vérifiez que la clé est branchée, puis choisissez Actualiser. Pour plus de détails, choisissez Ouvrir le dossier des journaux.
+usb-scan-failed-title = Impossible de lire la liste des clés USB
+# Éléments de la ligne de détail d'une clé, reliés par usb-detail-separator ; les éléments vides sont omis.
+# $size est un nombre de gigaoctets formaté (texte) ; $volumes et $serial sont du texte.
+usb-drive-size = { $size } Go
+usb-drive-serial = N° de série : { $serial }
+usb-detail-separator = { " · " }
+usb-review = Vérifier la clé USB
+usb-erase-title = Effacer cette clé USB ?
+usb-erase-description = Tout le contenu de { $drive } ({ $size } Go) sera définitivement effacé, y compris tous les fichiers et partitions. Copiez d’abord sur un autre disque tout ce que vous souhaitez conserver. Votre ISO ne sera pas effacée.
+usb-layout = Vanta utilise jusqu’à 32 Go de la clé et laisse le reste inutilisé. La clé USB fonctionne sur les PC qui démarrent en mode UEFI, requis par Windows 11.
+usb-ack = Je comprends que tout le contenu de cette clé USB sera effacé
+usb-write = Effacer et créer la clé
+usb-stage-prepare = Préparation des fichiers d’installation…
+usb-stage-format = Formatage de la clé USB…
+usb-stage-copy = Copie des fichiers d’installation…
+usb-stage-verify = Vérification de la clé USB…
+usb-working = Gardez Vanta ouvert et la clé USB branchée. Si vous annulez, la clé USB incomplète ne pourra pas servir à installer Windows.
+# Titres de la barre d'erreur, de la barre de réussite et de l'invite de fermeture pendant l'écriture d'une clé.
+usb-failed-title = La création de la clé USB n’a pas pu aboutir
+usb-complete-title = Votre clé USB est prête
+usb-close-title = La création de la clé USB est en cours
+# Après le début possible de l'effacement.
+usb-failed = La clé a peut-être déjà été effacée : elle ne permet donc pas encore d’installer Windows. Assurez-vous qu’elle est branchée, puis choisissez Vérifier la clé USB pour réessayer. Si vous l’avez rebranchée, choisissez d’abord Actualiser et sélectionnez-la à nouveau.
+# Avant toute modification de la clé : en général, puis pour les raisons signalées par le processus d'écriture.
+usb-failed-unchanged = Votre clé USB n’a pas été modifiée. Choisissez Ouvrir le dossier des journaux pour voir ce qui a échoué, puis Vérifier la clé USB pour réessayer.
+usb-failed-iso = Cette ISO ne permet pas de créer une clé d’installation. Choisissez une ISO créée par Vanta, ou une ISO Windows 11 de Microsoft d’une version prise en charge par Vanta. Votre clé USB n’a pas été modifiée.
+usb-failed-location = L’ISO ou Vanta Manager se trouve sur cette clé USB, sur un emplacement réseau ou dans un dossier lié. Déplacez le fichier concerné dans un dossier local de ce PC, puis réessayez. Votre clé USB n’a pas été modifiée.
+usb-failed-space = L’espace libre est insuffisant sur le disque Windows pour préparer les fichiers d’installation. Libérez de l’espace, puis réessayez. Votre clé USB n’a pas été modifiée.
+usb-failed-fit = Les fichiers d’installation ne tiennent pas sur cette clé USB. Utilisez une clé de plus grande capacité, puis réessayez. Votre clé USB n’a pas été modifiée.
+usb-failed-drive-changed = La clé USB a été retirée, rebranchée ou remplacée après la lecture de la liste. Choisissez Actualiser, sélectionnez à nouveau la clé, puis choisissez Vérifier la clé USB. Votre clé USB n’a pas été modifiée.
+usb-cancelled = La clé peut contenir des fichiers d’installation incomplets. Recréez-la avant de l’utiliser pour installer Windows.
+usb-cancelled-title = Création de la clé USB annulée
+usb-cancelled-unchanged = Votre clé USB n’a pas été modifiée.
+usb-complete = Vanta a vérifié chaque fichier. Choisissez Éjecter la clé USB, puis sauvegardez les fichiers du PC à réinstaller. Branchez la clé sur ce même PC, puis démarrez-le depuis la clé USB à l’aide de son menu de démarrage (souvent F12, F11 ou Échap au démarrage du PC).
+usb-eject = Éjecter la clé USB
+usb-ejected = Vous pouvez maintenant débrancher la clé USB. Sauvegardez les fichiers du PC à réinstaller. Démarrez ensuite ce même PC depuis la clé USB à l’aide de son menu de démarrage (souvent F12, F11 ou Échap au démarrage).
+usb-eject-failed = Fermez les fichiers ou fenêtres qui l’utilisent, puis réessayez.
+usb-eject-failed-title = Impossible d’éjecter la clé USB
+ready-fresh-title = Vanta est conçu pour une nouvelle installation de Windows
+ready-fresh-description = Si vous utilisez déjà Windows sur ce PC, sauvegardez vos fichiers et réinstallez Windows avant de continuer. Assurez-vous d’abord que la vérification Compatibilité de Windows réussit dans Vérifications du PC, pour réinstaller une version prise en charge.
+# Famille (Home), LTSC et Server sont les éditions que la vérification refuse ; les autres sont des exemples d'éditions acceptées. Noms tels que Windows les affiche en français.
+detail-edition-unsupported = Les éditions Famille, LTSC et Server de Windows 11 ne sont pas prises en charge. Utilisez une autre édition, comme Professionnel, Éducation ou Entreprise. Si Windows n’a pas pu identifier votre édition, résolvez ce problème avant de continuer.
+install-source-title = Installation indisponible
+install-source-unsupported = Vanta { $source } ne peut pas être mis à jour directement vers { $target }. Pour utiliser cette version, sauvegardez vos fichiers et réinstallez Windows.
+# Avant le choix d'un package : la version proposée n'est pas encore connue.
+install-source-unsupported-any = Vanta { $source } ne peut pas être mis à jour directement. Pour utiliser une version plus récente, sauvegardez vos fichiers et réinstallez Windows.
+# « Ouvrir un fichier de package » est package-open-file. $folder est un chemin de dossier (texte).
+install-source-resume = Une installation de Vanta { $target } ne s’est pas terminée, et seul le package Vanta { $target } permet de l’achever. Choisissez Ouvrir un fichier de package et sélectionnez ce package Vanta (.vantapkg). Si Vanta l’a téléchargé, il se trouve dans { $folder }.
+# Version de test : seul le package Vanta intégré peut être installé.
+install-source-resume-bundled = Une installation de Vanta { $target } ne s’est pas terminée. Cette version de test ne peut installer que son package Vanta intégré : terminez donc cette installation avec le package Vanta { $target } dans une version publiée de Vanta Manager.
+install-source-unknown = Vanta n’a pas pu confirmer ce qui est déjà installé sur ce PC et n’installera donc rien pour le moment. Choisissez Envoyer un rapport pour que l’équipe Vanta puisse vous aider.
+# $problem est l'un des messages install-source-* ; $error est un message d'erreur brut (texte).
+install-source-details = { $problem } Détails : { $error }
+iso-edition-selection = Seules les éditions prises en charge sont incluses. Lors de l’installation de Windows, choisissez une édition pour laquelle vous disposez d’une licence Windows.
+detail-windows-preview = Les builds Insider ne sont pas prises en charge. Utilisez une version publique de Windows 11.
+detail-windows-release-unknown = Vanta n’a pas pu confirmer que cette build de Windows est une version publique. Connectez-vous à Internet et vérifiez à nouveau.
+# $build is this PC's Windows build and update number, such as 26300.9807 (text).
+detail-windows-release-unlisted = La build { $build } ne figure pas dans la liste Microsoft des versions publiques de Windows 11, Vanta ne peut donc pas encore s’y installer. Les builds Release Preview et les autres builds en préversion ne sont pas prises en charge. Choisissez Vérifier à nouveau dès que Microsoft aura ajouté cette build à la liste.
+iso-release-unknown = Vanta n’a pas pu confirmer que cette ISO contient une version publique de Windows 11 prise en charge par le package Vanta. Connectez-vous à Internet, puis choisissez à nouveau Vérifier les fichiers. Si l’échec persiste, téléchargez de nouveau l’ISO auprès de Microsoft.
+iso-release-unlisted = La build de Windows 11 contenue dans cette ISO ne figure pas dans la liste Microsoft des versions publiques. Les builds Release Preview et les autres builds en préversion ne sont pas prises en charge. Téléchargez l’ISO auprès de Microsoft, ou choisissez à nouveau Vérifier les fichiers dès que Microsoft aura ajouté cette build à la liste.
+prepare-previous-worker = Des mises à jour lancées précédemment sont toujours en cours. Vanta attendra qu’elles se terminent, puis vous pourrez rechercher à nouveau les mises à jour.
+
+ready-used-windows-title = Windows semble déjà utilisé sur ce PC
+ready-used-windows-description = Windows a été installé sur ce PC il y a au moins une semaine ou contient déjà plusieurs applications. Installer Vanta ici n’est pas pris en charge et est fortement déconseillé : vos applications et paramètres existants risquent de ne pas fonctionner comme prévu, et Vanta supprime OneDrive, si bien que les fichiers qu’il contient ne sont plus synchronisés et que vos dossiers Bureau, Documents et Images peuvent sembler vides. Sauvegardez vos fichiers et réinstallez d’abord Windows, ou ne continuez que si vous acceptez ce risque.
+ready-used-windows-dismiss = Continuer quand même
+
+prepare-resumed = Votre PC a redémarré et Vanta a restauré les choix que vous aviez déjà faits. Choisissez Poursuivre les mises à jour pour les terminer avant d’installer Vanta.
+prepare-continue = Poursuivre les mises à jour
+prepare-saving-restart = Enregistrement de vos choix et configuration de la réouverture de Vanta après le redémarrage de Windows…
+prepare-restart-save-failed = Vos choix n’ont pas pu être enregistrés. Réessayez avant de redémarrer.
+prepare-restart-registration-failed = Vos choix sont enregistrés, mais Vanta n’a pas pu prévoir sa réouverture après le redémarrage. Réessayez, ou redémarrez votre PC vous-même et ouvrez Vanta après votre connexion.
+prepare-restart-source-linked = Vos choix sont enregistrés, mais tant qu’Vanta Manager se trouve dans un dossier lié, Vanta ne peut pas prévoir sa réouverture après le redémarrage. Fermez Vanta et déplacez Vanta Manager dans un dossier local de ce PC. Ouvrez-le ensuite depuis ce dossier, ou redémarrez votre PC vous-même et ouvrez-le depuis ce dossier après votre connexion.
+prepare-restart-failed = Vanta n’a pas pu redémarrer votre PC. Réessayez ou redémarrez-le depuis le menu Démarrer. Vos choix sont enregistrés et Vanta se rouvrira après votre connexion.
+diagnostics-export = Exporter les diagnostics
+diagnostics-exporting = Collecte des diagnostics…
+diagnostics-privacy = Envoyez un rapport en privé à l’équipe Vanta, ou exportez un ZIP de diagnostic à partager quand vous demandez de l’aide. Vanta en retire votre nom d’utilisateur, le nom de votre PC et vos adresses e-mail.
+# Titre de la barre de résultat après une exportation ; son bouton est iso-open-folder.
+diagnostics-saved = ZIP de diagnostic créé
+diagnostics-failed-title = Impossible d’exporter les diagnostics
+# $error est l'erreur brute (texte).
+diagnostics-failed = Vérifiez que votre PC dispose d’espace disque libre, puis réessayez. Détails : { $error }
+
+## Tester builds (embedded-package feature)
+
+# One line of chrome under the title bar on a release-candidate build.
+rc-banner = Version de test Vanta { $release }. Cette application n’installe que le package Vanta intégré.
+home-status-bundled = Version de test { $release }
+home-status-ready = Prêt à installer
+package-bundled = Vanta { $version }, intégré à cette application, est prêt à être installé.
+rc-about-release = Version de test
+rc-about-commit = Commit source
+rc-about-package = Package Vanta intégré (SHA-256)
+iso-package-bundled = Le package Vanta intégré à cette application
+prepare-percent = { $percent } % de cette opération
+prepare-count = Mises à jour terminées : { $completed } sur { $total }
+prepare-bytes = { $downloaded } sur environ { $total } Mo téléchargés
+prepare-elapsed = Temps écoulé : { $minutes } min { $seconds } s
+prepare-progress-waiting = En attente du service de mise à jour. Aucun pourcentage n’est disponible pour cette opération.
+prepare-progress-unchanged = Aucune progression depuis { $minutes } min. Les mises à jour volumineuses peuvent prendre du temps : gardez Vanta ouvert. Pour plus de détails, choisissez Ouvrir le dossier des journaux.
+prepare-report-delayed = Windows n’a signalé aucune progression depuis { $seconds } s. Les mises à jour sont peut-être encore en cours : gardez Vanta ouvert.
+
+prepare-affected-app = l’application concernée
+prepare-app-in-use = Fermez { $app }, puis réessayez. Windows ne peut pas mettre à jour cette application tant qu’elle est ouverte. Si vous ne trouvez pas sa fenêtre, fermez l’application dans le Gestionnaire des tâches. Si l’échec persiste, redémarrez votre PC et réessayez avant d’ouvrir { $app }.
+prepare-install-busy = Une autre installation ou un redémarrage requis bloque les mises à jour. Attendez la fin des autres installations, redémarrez votre PC si Windows vous le demande, puis réessayez.
+prepare-failed-component-store = Windows signale que son magasin de composants est endommagé, ce qui empêche l’installation des mises à jour, et Vanta n’a pas pu le réparer. Redémarrez votre PC, puis choisissez Réessayer. Si les mises à jour échouent encore, sauvegardez vos fichiers et réinstallez Windows avec une ISO Vanta.
+prepare-failed-component-store-unrepairable = Windows signale que son magasin de composants est endommagé et qu’il ne peut pas le réparer, si bien qu’il ne peut pas installer de mises à jour. Sauvegardez vos fichiers, puis réinstallez Windows avec une ISO Vanta.
+# Causes signalées par le processus de mise à jour. Son propre message en anglais est affiché en dessous comme détail.
+prepare-failed-session-owner = Vanta s’exécute sous un autre compte que celui connecté à Windows. Connectez-vous à Windows avec un compte administrateur, ouvrez Vanta depuis ce compte, puis réessayez.
+prepare-failed-store-missing = Le Microsoft Store n’est pas configuré pour votre compte. Ouvrez le Microsoft Store une fois, ou réinstallez-le s’il est absent, puis réessayez.
+prepare-failed-store-battery = Le Microsoft Store a suspendu les mises à jour pour économiser la batterie. Branchez votre PC sur le secteur, puis réessayez.
+prepare-failed-store-network = Le Microsoft Store a suspendu les mises à jour jusqu’à ce que votre PC dispose d’une connexion non limitée. Connectez-vous en Wi-Fi ou par Ethernet avec une connexion non limitée, puis réessayez.
+prepare-failed-store-timeout = Les applications du Store n’ont pas fini de se mettre à jour. Terminez les téléchargements restants dans le Microsoft Store, puis réessayez.
+prepare-failed-store-passes = Le Microsoft Store a continué à proposer de nouvelles mises à jour. Terminez les mises à jour restantes dans le Microsoft Store, puis réessayez.
+prepare-failed-manual-updates = Certaines mises à jour Windows doivent être terminées dans Windows Update. Ouvrez Windows Update, terminez-les, puis réessayez.
+prepare-failed-windows-passes = Windows Update a continué à proposer de nouvelles mises à jour. Terminez les mises à jour restantes dans Windows Update, puis réessayez.
+prepare-failed-source-linked = Vanta Manager se trouve dans un dossier lié. Fermez Vanta, déplacez Vanta Manager dans un dossier local de ce PC, puis ouvrez-le depuis ce dossier.
+prepare-error-code = Code d’erreur : { $code }
+prepare-open-store = Ouvrir Microsoft Store
+
+check-user-account = Compte utilisateur
+detail-user-account-ok = Le contrôle de compte d’utilisateur est activé et votre compte est prêt pour l’installation.
+detail-user-account-not-ready = Activez le contrôle de compte d’utilisateur (UAC), redémarrez votre PC, puis réessayez. Si vous utilisez le compte Administrateur intégré, connectez-vous avec un autre compte administrateur.
+detail-user-account-work-or-school = Vanta ne peut pas être installé depuis un compte professionnel ou scolaire (Microsoft Entra ID). Connectez-vous avec un compte local ou un compte Microsoft, puis réessayez.
+detail-user-account-unknown = Vanta n’a pas pu vérifier votre compte utilisateur. Redémarrez votre PC, puis rouvrez Vanta et vérifiez à nouveau. Si cela se reproduit, choisissez Envoyer un rapport. Windows a signalé : { $error }
+
+footer-prepare-required = Terminez la mise à jour de Windows et des applications du Store pour continuer
+footer-prepare-stopping = Arrêt des mises à jour après l’opération en cours…
+resume-choices-title = Reprise de votre installation précédente
+resume-choices-detail = Pour terminer cette installation, Vanta a restauré les choix que vous aviez faits la dernière fois. Vous ne pourrez pas les modifier à l’étape Vos choix tant que cette installation n’est pas terminée.
+
+## Voluntary reports
+report-title = Envoyer un rapport
+report-received = Rapport reçu
+report-reference = Conservez cette référence si vous contactez l’équipe Vanta au sujet de ce rapport. Si vous avez laissé vos coordonnées, l’équipe peut les utiliser pour vous répondre, mais une réponse n’est pas garantie.
+# Nom accessible du bouton Copier à côté de la référence du rapport.
+report-copy-reference = Copier la référence du rapport
+report-another = Envoyer un autre rapport
+# Libellé du choix entre les deux types de rapport.
+report-kind = Que souhaitez-vous envoyer ?
+report-kind-issue = Un problème
+report-kind-suggestion = Une suggestion
+report-intro = Décrivez ce qui s’est passé ou ce que vous aimeriez changer ({ $min } à { $max } caractères). N’indiquez aucun mot de passe dans votre message.
+report-message = Votre message
+report-message-placeholder = J’essayais de…
+report-contact = Coordonnées (facultatif)
+report-contact-placeholder = Adresse e-mail ou nom d’utilisateur Discord
+report-attach = Joindre les diagnostics
+report-attach-description = Journaux et informations système qui aident à trouver la cause. Vanta retire votre nom d’utilisateur, le nom du PC, les adresses e-mail ainsi que les mots de passe ou clés connus. Les détails des erreurs, les modèles de matériel et les noms d’applications sont conservés. Vous pouvez vérifier le ZIP avant l’envoi.
+report-prepare = Préparer les diagnostics
+report-review = Vérifier le ZIP
+report-prepare-failed-title = Impossible de préparer les diagnostics
+# $error est un message d'erreur brut (texte).
+report-prepare-failed = Préparez à nouveau les diagnostics, ou désactivez Joindre les diagnostics pour envoyer votre rapport sans eux. Détails : { $error }
+report-privacy = Vanta Manager does not send reports: nothing leaves this PC. Your message and diagnostics stay here.
+report-consent = J’accepte d’envoyer ce rapport et les éventuels diagnostics joints à l’équipe Vanta
+report-failed = Votre message est conservé. Vérifiez votre connexion Internet, puis choisissez Réessayer, ou envoyez votre rapport depuis le site de signalement.
+report-failed-busy = Le service de signalement est occupé. Votre message est conservé. Réessayez plus tard.
+report-failed-outdated = Cette version de Vanta Manager ne peut plus envoyer de rapports. Votre message est conservé : copiez-le sur le site de signalement. Si vous avez joint les diagnostics, choisissez Vérifier le ZIP et joignez aussi le ZIP sur le site.
+report-failed-diagnostics = Les diagnostics préparés ne peuvent pas être envoyés. Votre message est conservé. Préparez à nouveau les diagnostics ou désactivez Joindre les diagnostics.
+# Lien sous un rapport qui n'a pas été envoyé.
+report-sending = Envoi…
+report-send = Envoyer le rapport
+
+report-validation-message = Saisissez entre { $min } et { $max } caractères.
+
+report-validation-contact = Limitez les coordonnées à { $max } caractères.
+
+report-validation-consent = Confirmez votre accord pour envoyer ce rapport.
+
+report-failed-title = Rapport non envoyé
+
+## Windows version update
+home-plan-intro = Cette mise à jour se fait en deux temps. Vos fichiers et vos applications sont conservés. Si la mise à jour de Windows annule certaines modifications de Vanta, Vanta les rétablit.
+home-plan-windows-title = Windows 11, version { $release }
+home-plan-windows-detail = Vanta l’installe depuis Windows Update. Votre PC redémarre pour terminer l’installation.
+home-plan-windows-optional = Recommandé. Vanta l’installe depuis Windows Update. Votre PC redémarre pour terminer l’installation.
+home-plan-atlas-title = Vanta { $version }
+home-plan-atlas-detail = Vanta met à jour ses fichiers et conserve les choix que vous avez faits. Votre PC redémarre à la fin.
+home-end-of-updates-title = Windows 11, version { $current } cessera de recevoir des mises à jour de sécurité le { $date }
+home-end-of-updates-past-title = Windows 11, version { $current } ne reçoit plus de mises à jour de sécurité
+home-end-of-updates-message = La mise à jour vers Vanta { $version } fait aussi passer ce PC à Windows 11, version { $release }, qui reçoit des mises à jour de sécurité jusqu’au { $until }.
+install-windows-edition = Vanta { $version } fonctionne avec Windows 11 Professionnel, Entreprise et Éducation. Ce PC utilise { $product } : Vanta ne peut donc pas s’y installer.
+install-windows-edition-ending = Vanta { $version } fonctionne avec Windows 11 Professionnel, Entreprise et Éducation. Ce PC utilise { $product } : Vanta ne peut donc pas s’y installer. Windows 11, version { $current } cessera de recevoir des mises à jour de sécurité le { $date }. Windows Update peut faire passer ce PC à une version plus récente.
+install-windows-no-path = Vanta { $version } nécessite Windows 11, version { $releases }, et Windows Update ne peut pas y faire passer ce PC depuis le Windows installé. Pour utiliser Vanta { $version }, sauvegardez vos fichiers et réinstallez Windows avec une ISO Vanta.
+home-update-access-title = Paramètres Windows Update modifiés pour la mise à jour de Vanta
+home-update-access-not-offered = Vanta a activé Windows Update pour faire passer ce PC à Windows 11, version { $release }, mais Windows Update ne l’a pas encore proposé. Choisissez Vérifier à nouveau ou Rétablir les paramètres.
+home-update-access-before = Vanta a activé Windows Update pour faire passer ce PC à Windows 11, version { $release }, et n’a pas terminé. Poursuivez la mise à jour, ou choisissez Rétablir les paramètres.
+home-update-access-after = Ce PC utilise Windows 11, version { $release }. Terminez l’installation de Vanta, ou choisissez Rétablir les paramètres.
+home-update-access-plain = Vanta a activé Windows Update pour installer des mises à jour et n’a pas terminé. Poursuivez la mise à jour, ou choisissez Rétablir les paramètres.
+home-update-access-unreadable = Vanta ne parvient pas à lire son enregistrement des paramètres Windows Update qu’il a modifiés : il ne modifiera et ne rétablira donc rien. Choisissez Envoyer un rapport pour que l’équipe Vanta puisse vous aider.
+home-update-access-failed = Vanta n’a pas pu rétablir les paramètres. Réessayez ou choisissez Envoyer un rapport. Détails : { $error }
+home-update-access-install-active = Terminez d’abord l’installation de Vanta. Elle rétablit ces paramètres à la fin.
+home-continue-update = Reprendre la mise à jour
+home-put-back = Rétablir les paramètres
+home-putting-back = Rétablissement des paramètres…
+windows-card-title = Windows 11, version { $release }
+windows-card-required = Vanta { $version } nécessite une version plus récente de Windows. Lorsqu’Vanta met à jour Windows ci-dessous, il installe aussi Windows 11, version { $release }, depuis Windows Update.
+windows-card-question = Quelle version de Windows ce PC doit-il utiliser ?
+windows-choice-move = Mettre à jour vers Windows 11, version { $release }
+windows-choice-move-detail = Recommandé. Mises à jour de sécurité jusqu’au { $date }. Un redémarrage de plus.
+windows-choice-keep = Conserver Windows 11, version { $current }
+windows-choice-keep-detail = Votre PC reste sur cette version. Windows Update ne le fera pas passer à une version plus récente : pour en changer plus tard, il faudra une autre mise à jour dans Vanta Manager.
+windows-card-facts = Ce qui change
+windows-fact-keep = Vos fichiers et vos applications sont conservés. Si la mise à jour annule certaines modifications de Vanta, Vanta les rétablit lors de son installation.
+windows-fact-restart = Votre PC redémarre au moins une fois de plus pour la terminer.
+transition-offer-expectation = Windows Update propose généralement cette version en quelques minutes, mais cela peut prendre jusqu’à 2 heures : Vanta attend et vérifie pour vous.
+windows-fact-stays = Ensuite, Windows reste sur la version { $release } et ne passe pas de lui-même à une version plus récente.
+windows-fact-removed = La version { $release } n’inclut ni Windows PowerShell 2.0 ni l’outil WMIC.
+windows-card-undo = Pour l’annuler plus tard, désinstallez la mise à jour dans Windows Update > Historique des mises à jour. Si Windows s’est réinstallé pour se mettre à jour, choisissez plutôt Retour en arrière dans Paramètres > Système > Récupération, dans les 10 jours. Vanta { $version } ne prend pas en charge la version { $current } : n’annulez donc pas la mise à jour une fois Vanta { $version } installé.
+windows-card-undo-optional = Pour l’annuler plus tard, désinstallez la mise à jour dans Windows Update > Historique des mises à jour. Si Windows s’est réinstallé pour se mettre à jour, choisissez plutôt Retour en arrière dans Paramètres > Système > Récupération, dans les 10 jours.
+windows-terms = J’accepte les termes du contrat de licence logiciel Microsoft pour Windows 11, version { $release }
+windows-terms-link = Lire les termes du contrat de licence
+windows-card-locked = Pour conserver la version { $current }, choisissez Annuler, puis Arrêter les mises à jour.
+prepare-description-transition = Avant l’installation, Vanta installe les mises à jour Windows en attente, puis Windows 11, version { $release }, puis met à jour le Microsoft Store et vos applications du Store. Les applications du Store ouvertes peuvent se fermer pendant leur mise à jour : enregistrez d’abord votre travail dans ces applications. Votre PC redémarre au moins une fois.
+prepare-start-transition = Mettre à jour Windows vers la version { $release }
+prepare-needs-terms = Disponible lorsque vous acceptez les termes du contrat de licence dans la carte Windows 11, version { $release }.
+ready-banner-not-offered-message = Consultez « Mettre à jour Windows et les applications du Store » pour savoir ce que vous pouvez faire maintenant.
+ready-banner-transition-failed-message = Consultez « Mettre à jour Windows et les applications du Store » pour savoir quoi faire ensuite.
+ready-banner-terms-title = Acceptez les termes du contrat de licence pour continuer
+ready-banner-terms-message = Ils se trouvent dans la carte Windows 11, version { $release }, plus bas sur cette page. Choisissez ensuite Mettre à jour Windows vers la version { $release }.
+access-notice-title = Vanta active temporairement Windows Update
+access-off = Windows Update est désactivé sur ce PC. Vanta le réactive pendant qu’il met à jour Windows.
+access-paused = Les mises à jour Windows sont suspendues sur ce PC. Vanta lève cette suspension pendant qu’il met à jour Windows.
+access-delayed = Les mises à jour mensuelles sont différées sur ce PC. Vanta supprime ce report pendant qu’il met à jour Windows.
+access-back-chosen = Une fois Vanta { $version } installé, ces paramètres sont rétablis selon vos choix.
+access-back = Une fois Vanta { $version } installé, ces paramètres sont rétablis tels qu’ils étaient.
+access-back-stop = Si vous arrêtez avant, Vanta les rétablit.
+prepare-reboot-transition = Windows 11, version { $release } est installé. Choisissez Redémarrer et continuer pour terminer son installation. Vanta se rouvre après votre connexion.
+prepare-reboot-commit = Windows doit redémarrer une fois de plus pour terminer l’installation de la version { $release }. Vanta se rouvre après votre connexion.
+prepare-restart-commit-failed = Windows n’a pas pu préparer la fin de l’installation de la version { $release } au redémarrage : votre PC n’a donc pas redémarré. Choisissez Redémarrer et continuer pour réessayer.
+prepare-reason-feature-update = la nouvelle version de Windows
+prepare-reason-feature-commit = la finalisation de la nouvelle version de Windows
+prepare-resumed-transition = Votre PC a redémarré. Choisissez Poursuivre les mises à jour pour qu’Vanta vérifie que l’installation de Windows 11, version { $release } est terminée et installe les mises à jour restantes.
+prepare-waiting-offer = Vanta attend que Windows Update propose Windows 11, version { $release }. Cela prend généralement quelques minutes, mais peut durer jusqu’à 2 heures. Vous pouvez continuer à utiliser votre PC, mais laissez Vanta ouvert.
+prepare-resumed-before-move = Votre PC a redémarré pour terminer l’installation des mises à jour. Choisissez Poursuivre les mises à jour pour qu’Vanta installe les mises à jour restantes, puis Windows 11, version { $release }.
+prepare-not-offered-title = En attente de Windows 11, version { $release } dans Windows Update
+prepare-transition-failed-title = Windows n’a pas pu passer à la version { $release }
+prepare-failed-feature-not-offered = Windows Update peut mettre du temps à proposer Windows 11, version { $release } à un PC. Votre PC utilise toujours la version { $current }.
+prepare-offer-rechecking = Vanta vérifie à nouveau toutes les 10 minutes et poursuit automatiquement dès que Windows Update propose cette version. Vous pouvez aussi choisir Vérifier à nouveau.
+prepare-offer-waited =
+    { $minutes ->
+        [one] En attente depuis { $minutes } minute.
+       *[other] En attente depuis { $minutes } minutes.
+    }
+prepare-offer-next-check =
+    { $minutes ->
+        [one] Prochaine vérification dans { $minutes } minute.
+       *[other] Prochaine vérification dans { $minutes } minutes.
+    }
+prepare-offer-checking-now = Vérification en cours.
+prepare-offer-check-again = Choisissez Vérifier à nouveau pour lancer une recherche maintenant.
+prepare-offer-wait-ended-title = Windows Update n’a pas encore proposé Windows 11, version { $release }
+prepare-offer-wait-ended = Windows Update n’a pas proposé Windows 11, version { $release } dans les 2 heures : Vanta a donc cessé d’attendre et a rétabli vos paramètres Windows Update. Choisissez Vérifier à nouveau plus tard. Si vous ne pouvez pas attendre, sauvegardez vos fichiers et réinstallez Windows avec une ISO Vanta.
+prepare-offer-wait-put-back-failed = Windows Update n’a pas proposé Windows 11, version { $release } dans les 2 heures, et Vanta n’a pas pu rétablir vos paramètres Windows Update. Choisissez Rétablir les paramètres pour réessayer. Détails : { $error }
+prepare-failed-feature-hardware = Ce PC ne répond pas à la configuration matérielle requise pour Windows 11 ({ $missing }) : Windows Update ne le fera donc pas passer à la version { $release }. Votre PC utilise toujours la version { $current }. Pour utiliser Vanta { $version }, sauvegardez vos fichiers et réinstallez Windows avec une ISO Vanta.
+hardware-tpm = TPM 2.0
+hardware-uefi = microprogramme UEFI
+prepare-failed-feature-hidden = Windows 11, version { $release } est masqué dans Windows Update sur ce PC. Affichez-le à nouveau avec l’outil qui a servi à le masquer, puis choisissez Réessayer.
+prepare-failed-feature-disk-space = Windows a besoin d’au moins { $needed } Go d’espace libre sur le lecteur { $drive } pour cette mise à jour, alors qu’il n’y en a que { $free } Go. Vanta n’a rien modifié. Libérez de l’espace, puis choisissez Réessayer.
+prepare-failed-feature-servicing = Windows signale que son magasin de composants est endommagé et qu’il ne peut pas le réparer : Vanta n’a donc rien modifié. Réparez Windows, puis choisissez Réessayer.
+prepare-failed-feature-managed = Ce PC reçoit ses mises à jour du serveur de mise à jour d’une organisation : Vanta ne peut donc pas le faire passer à la version { $release }. Vanta n’a rien modifié.
+prepare-failed-feature-policy = Un élément de ce PC annule sans cesse les modifications qu’Vanta apporte à { $setting } : Vanta ne peut donc pas mettre à jour Windows. Si ce PC est géré par une organisation, adressez-vous à elle. Vanta rétablit ce qu’il a modifié lorsque vous arrêtez.
+prepare-failed-feature-blocked = Un paramètre qu’Vanta n’a pas modifié empêche Windows Update de fonctionner : { $setting }. Modifiez-le pour que Windows Update puisse fonctionner, puis choisissez Réessayer.
+prepare-failed-feature-rolled-back = Windows n’a pas pu terminer l’installation de la version { $release } pendant le redémarrage et est revenu à la version { $current }. Vos fichiers et vos applications ne sont pas touchés. Choisissez Réessayer ou Envoyer un rapport.
+prepare-failed-feature-components-lost = Certaines modifications de Vanta ont disparu après la mise à jour de Windows, et rien n’indique que Windows s’est réinstallé : Vanta ne peut donc pas savoir ce qui s’est passé. Vanta { $version } n’a pas été installé. Choisissez Envoyer un rapport pour que l’équipe Vanta puisse vous aider.
+prepare-failed-feature-build = La version de Windows de ce PC a changé pendant qu’Vanta la mettait à jour. Choisissez Rétablir les paramètres, puis recommencez depuis l’accueil.
+prepare-failed-feature-journal = Vanta ne parvient pas à lire son enregistrement des paramètres Windows Update qu’il a modifiés : il ne modifiera et ne rétablira donc rien. Choisissez Envoyer un rapport pour que l’équipe Vanta puisse vous aider.
+prepare-failed-feature-pin = Une stratégie Windows Update de ce PC, { $setting }, a une valeur qu’Vanta ne peut pas enregistrer : Vanta n’a donc rien modifié. Choisissez Envoyer un rapport pour que l’équipe Vanta puisse vous aider.
+prepare-failed-feature-terms = Acceptez les termes du contrat de licence de Windows 11, version { $release }, puis choisissez Réessayer.
+prepare-failed-feature-failed = Windows n’a pas pu installer la version { $release }. Votre PC utilise toujours la version { $current }. Choisissez Réessayer. En cas de nouvel échec, choisissez Envoyer un rapport.
+prepare-check-again = Vérifier à nouveau
+prepare-keep-version = Conserver la version { $current }
+stop-update-title = Arrêter la mise à jour vers Vanta { $version } ?
+stop-update-title-windows = Arrêter la mise à jour de Windows ?
+stop-update-before = Vanta rétablit les paramètres Windows Update qu’il a modifiés. Les mises à jour déjà installées par Windows le restent, et votre PC conserve Windows 11, version { $current }.
+stop-update-after = Votre PC conserve Windows 11, version { $release }. Vanta rétablit les paramètres Windows Update qu’il a modifiés.
+stop-update-access = Vanta rétablit les paramètres Windows Update qu’il a modifiés. Les mises à jour déjà installées par Windows le restent.
+stop-update-keep = Continuer la mise à jour
+# Boîte de dialogue affichée si la fenêtre est fermée pendant que Windows Update est activé pour une mise à jour. Ses boutons sont window-close-keep et window-close-put-back.
+window-close-update-access-title = Fermer Vanta ?
+window-close-update-access-message = Avant de se fermer, Vanta rétablit les paramètres Windows Update qu’il a modifiés. Vous pourrez recommencer la mise à jour depuis l’accueil.
+window-close-put-back = Rétablir et fermer
+window-close-put-back-failed-title = Fermer sans rétablir les paramètres ?
+window-close-put-back-failed-message = Si vous fermez Vanta maintenant, les paramètres Windows Update restent tels qu’Vanta les a modifiés. Lorsque vous rouvrirez Vanta, l’accueil vous proposera de les rétablir.
+installed-update-off-again = Windows Update est de nouveau désactivé, comme vous l’avez choisi. Tant qu’il est désactivé, votre PC ne reçoit aucune mise à jour de sécurité.
+installed-update-paused-again = Les mises à jour Windows sont de nouveau suspendues, comme vous l’avez choisi. Tant qu’elles sont suspendues, votre PC ne reçoit aucune mise à jour de sécurité.
+detail-build-transition = Ce PC utilise Windows 11, version { $current }, que cette version de Vanta ne prend pas en charge. Vanta fait passer Windows à la version { $release } lorsqu’il met à jour Windows ci-dessous.
+report-transition-intro = La mise à jour de Windows pour Vanta ne s’est pas terminée. Détails pour l’équipe Vanta :
+mode-rebase = Réinstallation après une mise à jour de Windows
+history-mode-rebase = réinstallation après une mise à jour de Windows
+ready-rebase-title = Windows s’est réinstallé pendant sa mise à jour
+ready-rebase-message = Windows 11, version { $release } a remplacé le Windows de ce PC : certaines modifications de Vanta ont donc disparu. Vanta { $version } les rétablit, avec les choix que vous aviez faits pour Vanta { $previous }.
+update-path-update-title = Comment souhaitez-vous passer à Vanta { $version } ?
+update-path-reinstall-title = Comment souhaitez-vous réinstaller Vanta { $version } ?
+update-path-keep = Conserver mes choix
+update-path-keep-detail = Vanta conserve chaque choix tel qu’il est actuellement sur ce PC et n’en modifie aucun. C’est la méthode la plus rapide.
+update-path-choose = Refaire mes choix
+update-path-choose-detail = Refaites chaque choix en partant de la configuration actuelle de ce PC. Vanta applique chacun d’eux comme le ferait une première installation. Vos applications, vos fichiers, le menu Démarrer, la barre des tâches et le thème restent tels quels, de même que les paramètres que vous avez modifiés depuis le dossier Vanta et que ces choix ne couvrent pas.
+update-path-now-title = Vos choix actuels sur ce PC
+update-path-unknown = Vanta ne peut pas le déterminer d’après votre PC : il vous pose donc la question
+option-detected-off = Détecté comme désactivé sur le système actuel. Rien n’a été choisi, la valeur sûre (rester activé) est donc sélectionnée : faites le choix vous-même.
+update-path-differs = Ce qu’Vanta a enregistré lors de votre dernière installation ne correspond pas à ce PC pour { $choices }. Cette liste montre l’état actuel du PC.
+keep-choices-title = Vous conservez vos choix
+keep-choices-partial = Vanta conserve la configuration actuelle de ce PC. Faites vous-même ces choix, qu’il ne peut pas déterminer d’après votre PC : { $missing }
+choose-again-title = Vous refaites vos choix
+choose-again-detail = Chaque choix part de la configuration actuelle de ce PC. Vanta applique vos choix pendant l’installation.
+option-now = Actuellement sur ce PC
+change-defender-enable = Vanta rétablit Microsoft Defender. Après le redémarrage, activez sa protection dans Sécurité Windows.
+change-mitigations-default = Vanta réactive les protections du processeur avec les paramètres par défaut de Windows. Cela prend effet après le redémarrage.
+change-mitigations-all-on = Toutes les protections du processeur sont actuellement activées. Si vous les conservez, elles restent toutes activées.
+change-auto-updates-default = Vanta laisse de nouveau Windows installer les mises à jour automatiquement.
+change-hibernation-on = Vanta réactive la mise en veille prolongée.
+change-power-saving-on = Vanta réactive les économies d’énergie et rétablit votre mode de gestion de l’alimentation précédent, ou, à défaut, le mode Utilisation normale.
+change-core-isolation-on = Vanta réactive la sécurité basée sur la virtualisation (VBS), sauf si une stratégie de ce PC la contrôle. Cela prend effet après le redémarrage.
+change-remove-snipping-tool = Supprime l’Outil Capture d’écran pour tous les utilisateurs de ce PC. Vanta ne pourra pas le rétablir ensuite, mais vous pourrez le réinstaller depuis le Microsoft Store.
+fixed-uninstall-edge = Microsoft Edge a déjà été supprimé, et la mise à jour de Vanta ne peut pas le rétablir. Pour le réinstaller, utilisez Install or Remove Edge dans le dossier Vanta.
+fixed-installed = { $app } est installé. Vanta ne désinstalle pas d’applications ; pour le supprimer, ouvrez Applications installées dans les Paramètres Windows.
+browser-also = { $installed } reste installé, et Vanta installe aussi { $browser }.
+summary-update-path = Mode de mise à jour
+step-heading-update-path-a11y = { $heading }. { $question }
+security-banner-removed-title = Vanta a supprimé Microsoft Defender de ce PC
+security-banner-restore-title = Vanta rétablit Microsoft Defender lors de cette installation
+security-banner-restore-message = Defender ne fonctionne pas encore : il n’y a donc rien à désactiver à cette étape. Après le redémarrage, activez sa protection dans Sécurité Windows. Choisissez Continuer.
+security-banner-missing-title = Microsoft Defender est introuvable
+security-banner-missing-message = Vanta ne l’a pas supprimé et ne peut donc pas le rétablir. Vous pouvez continuer, mais votre PC n’aura aucun antivirus tant que vous n’aurez pas installé une autre application antivirus ou réparé Windows.
+installed-defender-not-restored-title = Microsoft Defender est toujours supprimé
+installed-defender-not-restored-message = Vous avez choisi de conserver Microsoft Defender, mais une mise à jour précédente de Vanta ne l’a pas rétabli : votre PC n’a donc aucun antivirus. Pour le rétablir, mettez à jour ou réinstallez Vanta et sélectionnez Refaire mes choix, ou ouvrez 7. Security > Defender dans le dossier Vanta de votre bureau, lancez Toggle Defender, choisissez Enable Windows Defender, puis redémarrez votre PC.
+choices-not-applied-title = Certains choix n’ont pas pris effet
+choices-not-applied-message = Vanta a enregistré l’état actuel de ce PC pour { $choices }. Le journal d’installation en indique la raison.
+rebase-choices-title = Vos choix de Vanta { $previous }
+rebase-choices-detail = Vanta reprend les choix que vous aviez faits pour Vanta { $previous } : il n’y a donc rien à choisir ici. Pour les modifier ensuite, choisissez Réinstaller Vanta, puis sélectionnez Refaire mes choix.
+rebase-choices-partial = Vanta reprend les choix que vous aviez faits pour Vanta { $previous }. Vérifiez les choix suivants, qu’il n’a pas retrouvés : { $missing }
+restart-other-title = Une autre personne est connectée à ce PC
+restart-others-title = D’autres personnes sont connectées à ce PC
+restart-others-message = Le redémarrage fermera leurs applications, et elles perdront leur travail non enregistré. Comptes connectés : { $names }.
+restart-others-keep = Ne pas redémarrer
+restart-others-restart = Redémarrer quand même
+prepare-store-self-update = Mise à jour préalable du Microsoft Store, qui n’est pas à jour sur ce PC.
+prepare-store-repair = Réparation du Microsoft Store. Cela peut prendre quelques minutes.
+prepare-store-updated = Le Microsoft Store n’était pas à jour : Vanta l’a donc mis à jour avant vos applications.
+prepare-store-bootstrapped = Le Microsoft Store n’a pas pu se mettre à jour lui-même : Vanta a donc installé les dernières versions du Programme d’installation d’application et du Microsoft Store, fournies par Microsoft.
+prepare-store-repaired = Le Microsoft Store ne fonctionnait pas : Vanta l’a donc réparé.
+prepare-store-skipped-removed = Le Microsoft Store est désactivé sur ce PC : Vanta a donc ignoré les mises à jour des applications du Store.
+prepare-failed-store-repair-failed = Le Microsoft Store ne peut pas installer ni mettre à jour d’applications sur ce PC, et Vanta n’a pas pu le réparer. Vanta a besoin qu’il fonctionne, car installer Vanta alors qu’il est endommagé peut laisser le Store et ses applications hors d’usage. Choisissez Réparer Microsoft Store pour réessayer. Si le problème persiste, sauvegardez vos fichiers et réinstallez Windows avec une ISO Vanta, ou choisissez Envoyer un rapport.
+prepare-repair-store = Réparer Microsoft Store
+
+screen-keyboard-title = Langues du clavier
+screen-keyboard-question = Utilisez-vous plusieurs langues de clavier ?
+package-option-keyboard-shortcuts = Oui, avec des raccourcis clavier
+package-option-keyboard-selector = Oui, avec le sélecteur de la barre des tâches
+package-option-keyboard-single = Non, une seule disposition
+consequence-keyboard-shortcuts = Alt+Shift change la langue ; Ctrl+Shift change la disposition.
+consequence-keyboard-selector = Désactive Alt+Shift et Ctrl+Shift pour éviter les changements involontaires en jeu.
+package-choice-keyboard-description = Choisissez comment changer la langue du clavier.
+consequence-keyboard-single = { consequence-keyboard-selector }
+
+# Barre de mode de sélection en haut de l'écran des choix.
+options-mode-title = Mode de sélection
+options-mode-recommended = Recommandé par Vanta
+options-mode-manual = Choisir manuellement
+options-mode-recommended-detail = Applique le profil recommandé uniquement aux options de cet écran (conserve VBS, protection contre le hameçonnage, Store et Outil Capture ; active Brave et les optimisations Vanta sans modifier vos choix précédents).
+options-mode-manual-detail = Commence avec toutes les options facultatives décochées pour choisir une par une, ou applique Recommandé par Vanta en un clic.
+options-mode-proceed = Continuer avec Recommandé
+prepare-ready-title = Tout est prêt — cliquez sur Continuer ci-dessous
+prepare-ready-detail = Windows est prêt pour l'étape suivante. Vous pouvez continuer maintenant.
+option-recommended-label = { $label } (recommandé)
+option-core-isolation-unlock = Je ne joue pas à Valorant ni à d'autres jeux dont l'anti-triche l'exige
+option-why-disable-hibernation = Gain : libère plusieurs Go sur le SSD et garantit un démarrage propre. Attention : désactive la veille prolongée et le démarrage rapide sur portable.
+option-why-disable-power-saving = Gain : évite les baisses de fréquence et pics de latence en jeu. Attention : consomme plus d'énergie et réduit l'autonomie sur portable.
+option-why-disable-core-isolation = Gain : peut réduire légèrement la charge CPU sur certains PC. Attention : diminue la protection contre les pilotes malveillants et bloque les jeux à anti-triche strict (comme Valorant/Vanguard).
+option-why-disable-phishing-protection = Action : désactive les alertes Windows lors de la saisie de votre mot de passe sur un site suspect. Gain : aucun gain réel de FPS. Attention : réduit la protection contre le vol de mot de passe.
+option-why-disable-gamebar = Action : désactive l'overlay Xbox Game Bar et l'enregistrement en arrière-plan (Game DVR). Gain : moins de charge GPU et disque en jeu. Attention : Win+G et les clips Game Bar ne fonctionnent plus.
+option-why-remove-store = Action : supprime l'app Microsoft Store tout en gardant App Installer et winget. Gain : moins de mises à jour et processus en arrière-plan. Attention : impossible d'installer des apps Store ou jeux Game Pass.
+option-why-vanta-power = Action : active le mode d'alimentation Vanta réglé pour les PC fixes. Gain : garde le processeur réactif sans bridage d'économie en jeu. Attention : PC fixes uniquement ; ignoré sur portables.
+option-why-vanta-memory = Action : garde la compression mémoire active et désactive la fusion de pages et le préchargement. Gain : moins d'accès disque en fond et frametimes plus stables. Attention : premier lancement parfois un peu plus lent.
+option-why-tools-on-logon = Action : ouvre Vanta Tools automatiquement à la prochaine connexion. Gain : permet d'installer vos apps et réglages aussitôt. Attention : sans impact durable.
+option-why-remove-snipping-tool = Action : désinstalle l'Outil Capture de Windows. Gain : retire une app intégrée si vous utilisez ShareX ou Lightshot. Attention : Win+Maj+S ne fonctionnera plus sans alternative.
+option-why-uninstall-edge = Gain : retire les services et mises à jour en arrière-plan d'Edge. Attention : vérifiez qu'un autre navigateur est installé ou sélectionné ci-dessous.
+option-why-install-another-browser = Gain : prépare un navigateur dès la fin de l'installation, utile si vous retirez Edge. Attention : nécessite internet.
+option-why-install-eclean = Gain : aide à nettoyer les fichiers temporaires et les apps au démarrage. Attention : facultatif, nécessite un compte et internet.
+option-why-browser-brave = Action : installe Brave (Chromium) avec bloqueur de pubs et pisteurs intégré. Gain : navigation rapide et propre sans extension. Attention : les options crypto peuvent être ignorées.
+option-why-browser-librewolf = Action : installe LibreWolf, version durcie de Firefox sans télémétrie. Gain : protection maximale contre le pistage. Attention : certains sites demandent des exceptions de cookies.
+option-why-browser-firefox = Action : installe Mozilla Firefox, indépendant de Chromium. Gain : bonne confidentialité et riche catalogue d'extensions. Attention : quelques apps web Chromium peuvent différer.
+option-why-browser-chrome = Action : installe Google Chrome avec synchronisation Google. Gain : compatibilité maximale avec le web. Attention : consomme plus de RAM et collecte plus de données.

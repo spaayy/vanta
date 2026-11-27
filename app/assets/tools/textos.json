@@ -1,0 +1,568 @@
+{
+  "_sobre": "Textos em linguagem simples que o Vanta Tools mostra nos cartões e ao passar o mouse. Chave = id do ajuste em tweaks.json. Campos: titulo (opcional, troca o título técnico), resumo, explicacao, ganho, cuidado.",
+  "ajustes": {
+    "copilot-off": {
+      "titulo": "Desligar o Copilot",
+      "resumo": "O assistente de IA sai da barra de tarefas e o atalho deixa de abri-lo.",
+      "explicacao": "O Windows passa a tratar o Copilot como desativado por política, para você e para o sistema. O botão some e nada fica rodando à espera de ser chamado.",
+      "ganho": "Menos um processo em segundo plano e nada de IA abrindo sem querer.",
+      "cuidado": "Se um dia quiser usar o Copilot, desligue este ajuste."
+    },
+    "recall-off": {
+      "titulo": "Desligar o Recall",
+      "resumo": "O Windows para de tirar fotos da sua tela para a linha do tempo de IA.",
+      "explicacao": "O Recall e o Click to Do capturam o que aparece na tela para você buscar depois. Com este ajuste, a análise de IA fica proibida e nenhuma captura é guardada.",
+      "ganho": "Privacidade: senhas, conversas e jogos não viram imagens salvas no disco.",
+      "cuidado": ""
+    },
+    "telemetry-off": {
+      "titulo": "Telemetria no mínimo",
+      "resumo": "O Windows manda à Microsoft só o diagnóstico obrigatório.",
+      "explicacao": "A coleta de dados de uso cai para o nível mais baixo que o sistema aceita e o relatório automático de erros é desligado.",
+      "ganho": "Menos dados seus saindo do PC e menos tarefas de coleta rodando.",
+      "cuidado": "Quando um app travar, o Windows não vai mais oferecer enviar o relatório."
+    },
+    "ads-id-off": {
+      "titulo": "Sem ID de anúncios",
+      "resumo": "Os apps deixam de receber um código para te mostrar anúncios personalizados.",
+      "explicacao": "O Windows cria um identificador de publicidade por usuário. Desligado, os apps da Store não conseguem ligar o que você faz a um perfil de anúncios.",
+      "ganho": "Menos rastreamento entre apps.",
+      "cuidado": ""
+    },
+    "suggestions-off": {
+      "titulo": "Sem sugestões nem apps surpresa",
+      "resumo": "Some a propaganda do Iniciar e o Windows para de instalar apps sozinho.",
+      "explicacao": "O Windows costuma colocar dicas, sugestões de apps e até instalar jogos e apps patrocinados sem perguntar. Este ajuste corta os três.",
+      "ganho": "Iniciar limpo e nenhum app aparecendo do nada depois de uma atualização.",
+      "cuidado": ""
+    },
+    "bg-apps-off": {
+      "titulo": "Apps da Store sem rodar escondidos",
+      "resumo": "Apps da Microsoft Store só funcionam enquanto estão abertos.",
+      "explicacao": "Por padrão, apps da Store continuam acordados em segundo plano para atualizar blocos e notificações. Aqui eles dormem quando você fecha.",
+      "ganho": "Menos processos disputando CPU e memória durante o jogo.",
+      "cuidado": "Apps da Store que você usa para avisos (como e-mail) só vão notificar com a janela aberta."
+    },
+    "search-index-off": {
+      "titulo": "Indexação da busca desligada",
+      "resumo": "O Windows para de catalogar seus arquivos o tempo todo.",
+      "explicacao": "O serviço Windows Search lê o disco em segundo plano para montar um índice. Desligado, o disco fica quieto; a busca ainda funciona, só demora mais para achar arquivos.",
+      "ganho": "Menos leitura de disco e de CPU em momentos aleatórios.",
+      "cuidado": "Buscar arquivos pelo Iniciar ou Explorador fica mais lento."
+    },
+    "delivery-opt-off": {
+      "titulo": "Atualizações sem compartilhar sua internet",
+      "resumo": "O Windows Update deixa de enviar atualizações para outros PCs pela sua conexão.",
+      "explicacao": "A Otimização de Entrega funciona como um torrent: seu PC baixa e também envia pedaços das atualizações para outras pessoas. Aqui ele só baixa, direto da Microsoft.",
+      "ganho": "Upload livre, sem picos de uso de rede durante partidas.",
+      "cuidado": ""
+    },
+    "wu-drivers-off": {
+      "titulo": "Windows Update sem trocar drivers",
+      "resumo": "O Windows não troca o seu driver NVIDIA nem outros drivers sozinho.",
+      "explicacao": "As atualizações de qualidade às vezes trazem drivers e substituem o que você instalou. O Vanta mantém o driver 610.88 escolhido, e só você decide quando trocar.",
+      "ganho": "O driver testado continua o mesmo depois de cada atualização.",
+      "cuidado": "Drivers novos de outros aparelhos também deixam de chegar pelo Windows Update."
+    },
+    "store-autoupdate-off": {
+      "titulo": "Store sem atualizar sozinha",
+      "resumo": "Apps da Microsoft Store só atualizam quando você mandar.",
+      "explicacao": "A Store baixa atualizações em segundo plano a qualquer momento. Com este ajuste, você atualiza pela própria Store quando quiser.",
+      "ganho": "Nenhum download pesado começando no meio do jogo.",
+      "cuidado": "Lembre de abrir a Store de vez em quando para atualizar os apps."
+    },
+    "hibernate-off": {
+      "titulo": "Desligar de verdade",
+      "resumo": "Sem hibernação e sem a inicialização rápida que finge desligar.",
+      "explicacao": "A inicialização rápida salva parte do sistema no disco ao desligar, então o Windows nunca começa limpo. Desligando as duas, cada boot é um boot novo e o arquivo hiberfil.sys some.",
+      "ganho": "Libera vários GB no SSD e evita problemas que só um reinício limpo resolve.",
+      "cuidado": "O PC demora alguns segundos a mais para ligar e não dá para hibernar."
+    },
+    "storage-sense-off": {
+      "titulo": "Sem limpeza automática",
+      "resumo": "O Windows não apaga sozinho seus Downloads nem a Lixeira.",
+      "explicacao": "O Sensor de Armazenamento pode excluir arquivos antigos de Downloads e da Lixeira por conta própria. Aqui ele fica desligado e nada some sem você pedir.",
+      "ganho": "Nenhum arquivo apagado sem aviso.",
+      "cuidado": "Faça a limpeza manualmente quando o disco encher."
+    },
+    "classic-context": {
+      "titulo": "Menu do botão direito completo",
+      "resumo": "O clique direito abre todas as opções de uma vez, como no Windows 10.",
+      "explicacao": "O Windows 11 esconde metade das opções atrás de \"Mostrar mais opções\". Este ajuste volta o menu clássico, com 7-Zip, NanaZip e outros direto na primeira lista.",
+      "ganho": "Um clique a menos em tudo que você faz no Explorador.",
+      "cuidado": "Vale depois de reiniciar o Explorador ou o PC."
+    },
+    "taskbar-left": {
+      "titulo": "Barra de tarefas à esquerda",
+      "resumo": "Ícones da barra alinhados à esquerda, como no Windows 10.",
+      "explicacao": "Só muda a posição do botão Iniciar e dos ícones fixados. Desligado, eles voltam para o centro.",
+      "ganho": "",
+      "cuidado": ""
+    },
+    "taskbar-search-off": {
+      "titulo": "Esconder a busca da barra",
+      "resumo": "A caixa de pesquisa sai da barra; a busca continua no Iniciar.",
+      "explicacao": "É só visual: apertar a tecla Windows e digitar continua buscando normalmente.",
+      "ganho": "Mais espaço na barra de tarefas.",
+      "cuidado": ""
+    },
+    "bing-off": {
+      "titulo": "Busca só no seu PC",
+      "resumo": "O Iniciar procura apenas no computador, sem resultados do Bing.",
+      "explicacao": "Normalmente cada letra digitada no Iniciar também vai para a web. Aqui a busca fica local, mais rápida e sem mandar o que você digita para fora.",
+      "ganho": "Busca mais rápida e privada.",
+      "cuidado": ""
+    },
+    "widgets-off": {
+      "titulo": "Sem Widgets e notícias",
+      "resumo": "Some o painel de Widgets e o feed de notícias da barra.",
+      "explicacao": "O painel de Widgets carrega notícias, clima e anúncios em segundo plano. Desligado, nada disso fica rodando.",
+      "ganho": "Menos processos web abertos e nada de notícia aparecendo ao passar o mouse.",
+      "cuidado": ""
+    },
+    "taskview-off": {
+      "titulo": "Esconder Visão de Tarefas",
+      "resumo": "Tira o botão de áreas de trabalho virtuais da barra.",
+      "explicacao": "O recurso continua existindo pelo atalho Win+Tab; só o botão some.",
+      "ganho": "",
+      "cuidado": ""
+    },
+    "end-task": {
+      "titulo": "Finalizar tarefa pela barra",
+      "resumo": "Clique direito num app da barra mostra \"Finalizar tarefa\".",
+      "explicacao": "Quando um jogo ou programa trava, dá para encerrar direto pela barra de tarefas, sem abrir o Gerenciador de Tarefas.",
+      "ganho": "Fechar app travado em dois cliques.",
+      "cuidado": ""
+    },
+    "show-ext": {
+      "titulo": "Mostrar extensão dos arquivos",
+      "resumo": "Você vê .exe, .jpg, .txt no fim do nome dos arquivos.",
+      "explicacao": "Com a extensão escondida, um arquivo \"foto.jpg.exe\" parece uma foto. Mostrar a extensão deixa claro o que cada arquivo é.",
+      "ganho": "Mais segurança contra arquivos disfarçados.",
+      "cuidado": ""
+    },
+    "show-hidden": {
+      "titulo": "Mostrar arquivos ocultos",
+      "resumo": "Pastas como AppData aparecem no Explorador.",
+      "explicacao": "Muitas configurações de jogos e apps ficam em pastas ocultas. Com elas visíveis, fica fácil achar saves, configs e logs.",
+      "ganho": "",
+      "cuidado": "Cuidado para não apagar arquivos do sistema que agora aparecem."
+    },
+    "open-thispc": {
+      "titulo": "Explorador abre nos discos",
+      "resumo": "O Explorador começa em Este Computador, não na página Início.",
+      "explicacao": "Ao abrir o Explorador você cai direto nos seus discos (C:, D:), sem passar pela lista de recentes.",
+      "ganho": "",
+      "cuidado": ""
+    },
+    "compact-mode": {
+      "titulo": "Explorador compacto",
+      "resumo": "Menos espaço entre os itens das pastas.",
+      "explicacao": "Volta o espaçamento mais justo do Windows 10, com mais arquivos visíveis por tela.",
+      "ganho": "",
+      "cuidado": ""
+    },
+    "quick-access-clean": {
+      "titulo": "Acesso rápido sem histórico",
+      "resumo": "O Explorador não lista arquivos recentes nem pastas frequentes.",
+      "explicacao": "Só ficam as pastas que você fixou. Nada do que você abriu aparece ali para quem olhar a tela.",
+      "ganho": "Privacidade ao compartilhar a tela ou fazer stream.",
+      "cuidado": ""
+    },
+    "start-recs-off": {
+      "titulo": "Iniciar sem recomendações",
+      "resumo": "Some a seção de arquivos e apps recomendados do Iniciar.",
+      "explicacao": "O Iniciar deixa de acompanhar os documentos que você abre para sugerir depois.",
+      "ganho": "Iniciar limpo e mais privado.",
+      "cuidado": ""
+    },
+    "shortcut-suffix-off": {
+      "titulo": "Atalhos sem \"- Atalho\"",
+      "resumo": "Atalhos novos ficam só com o nome do programa.",
+      "explicacao": "Ao criar um atalho, o Windows não acrescenta mais \"- Atalho\" no final do nome.",
+      "ganho": "",
+      "cuidado": ""
+    },
+    "dark-theme": {
+      "titulo": "Tema escuro",
+      "resumo": "Windows e apps no modo escuro.",
+      "explicacao": "Liga o modo escuro para o sistema e para os apps que seguem o tema do Windows.",
+      "ganho": "",
+      "cuidado": ""
+    },
+    "transparency-off": {
+      "titulo": "Sem transparência",
+      "resumo": "Barra de tarefas e menus ficam sólidos, sem efeito de vidro.",
+      "explicacao": "O efeito de transparência desfoca o que está atrás das janelas o tempo todo. Desligado, a placa de vídeo tem um pouco menos de trabalho na área de trabalho.",
+      "ganho": "Interface mais leve, principalmente com jogo em janela.",
+      "cuidado": "O visual do Windows fica mais chapado."
+    },
+    "menu-delay-0": {
+      "titulo": "Menus instantâneos",
+      "resumo": "Submenus abrem na hora, sem a espera padrão.",
+      "explicacao": "O Windows espera 400 milissegundos antes de abrir um submenu. Aqui ele abre assim que o mouse chega.",
+      "ganho": "Sensação de sistema mais rápido.",
+      "cuidado": ""
+    },
+    "startup-delay-0": {
+      "titulo": "Apps de inicialização sem espera",
+      "resumo": "Os programas que abrem com o Windows começam assim que você entra.",
+      "explicacao": "O Windows segura os apps de inicialização por alguns segundos depois do login. Aqui eles abrem direto.",
+      "ganho": "Discord, Steam e companhia prontos mais cedo.",
+      "cuidado": "Logo após entrar, o PC pode ficar ocupado por alguns segundos."
+    },
+    "notifications-off": {
+      "titulo": "Sem notificações",
+      "resumo": "Nenhum aviso pop-up nem som de notificação no canto da tela.",
+      "explicacao": "Desliga as notificações do sistema e dos apps. Nada interrompe partida, gravação ou live.",
+      "ganho": "Nenhum pop-up roubando o foco do jogo.",
+      "cuidado": "Você não verá avisos de apps como e-mail e calendário."
+    },
+    "autoplay-off": {
+      "titulo": "Pendrive sem abrir nada sozinho",
+      "resumo": "Pendrives, discos e celulares não abrem nada automaticamente.",
+      "explicacao": "Ao conectar um dispositivo, o Windows não pergunta nem executa nada. Você abre pelo Explorador quando quiser.",
+      "ganho": "Mais segurança contra pendrive com arquivo malicioso.",
+      "cuidado": ""
+    },
+    "spooler-off": {
+      "titulo": "Impressão desligada",
+      "resumo": "O serviço de impressão fica parado.",
+      "explicacao": "Sem impressora, o spooler só ocupa memória e já teve falhas de segurança graves. Se for imprimir algum dia, ligue de novo.",
+      "ganho": "Um serviço a menos e menos risco.",
+      "cuidado": "Impressoras e \"Imprimir em PDF\" param de funcionar até você ligar."
+    },
+    "bluetooth-off": {
+      "titulo": "Bluetooth desligado",
+      "resumo": "O serviço de Bluetooth fica parado.",
+      "explicacao": "Mouse e headset sem fio de 2,4 GHz (com receptor USB) não usam Bluetooth. Se você não tem fone ou controle Bluetooth, o serviço só fica rodando à toa.",
+      "ganho": "Um serviço a menos.",
+      "cuidado": "Fones, controles e celulares por Bluetooth deixam de conectar."
+    },
+    "location-off": {
+      "titulo": "Localização desligada",
+      "resumo": "Nenhum app consegue saber onde você está.",
+      "explicacao": "Bloqueia o acesso à localização para todos os apps e para o próprio Windows.",
+      "ganho": "Privacidade.",
+      "cuidado": "Mapas, clima automático e \"Encontrar meu dispositivo\" deixam de usar sua posição."
+    },
+    "sticky-keys-off": {
+      "titulo": "Shift 5 vezes não abre aviso",
+      "resumo": "Apertar Shift várias vezes no jogo não abre mais a janela de Teclas de Aderência.",
+      "explicacao": "Desliga os atalhos de acessibilidade que disparam com Shift, NumLock ou teclas seguradas. A janela que minimiza o jogo nunca mais aparece.",
+      "ganho": "Nenhuma janela roubando o foco no meio da partida.",
+      "cuidado": ""
+    },
+    "mouse-accel-off": {
+      "titulo": "Mouse sem aceleração",
+      "resumo": "O cursor anda sempre a mesma distância para o mesmo movimento da mão.",
+      "explicacao": "Com \"Aprimorar precisão do ponteiro\" ligado, mover rápido leva o cursor mais longe que mover devagar. Desligado, a relação é 1:1 e a memória muscular funciona.",
+      "ganho": "Mira consistente em qualquer velocidade.",
+      "cuidado": ""
+    },
+    "numlock-off": {
+      "titulo": "NumLock começa desligado",
+      "resumo": "O teclado numérico começa desligado quando o PC liga.",
+      "explicacao": "Só define o estado inicial da tecla NumLock na tela de login.",
+      "ganho": "",
+      "cuidado": ""
+    },
+    "printscreen-snip-off": {
+      "titulo": "PrintScreen livre para o Lightshot",
+      "resumo": "A tecla PrtSc não abre a Ferramenta de Captura do Windows.",
+      "explicacao": "Assim o Lightshot (ou ShareX) pode usar a tecla PrintScreen sem disputar com o Windows.",
+      "ganho": "",
+      "cuidado": "Sem Lightshot ou ShareX instalado, PrtSc só copia a tela para a área de transferência."
+    },
+    "mmcss-games": {
+      "titulo": "Prioridade máxima para jogos",
+      "resumo": "O Windows reserva mais processador e disco para o jogo do que para tarefas de fundo.",
+      "explicacao": "O agendador multimídia do Windows (MMCSS) tem um perfil para jogos. Aqui ele recebe prioridade alta de CPU e de disco, e o sistema deixa de guardar uma fatia fixa para tarefas de fundo.",
+      "ganho": "Menos travadinhas quando algo roda em segundo plano durante a partida.",
+      "cuidado": "Gravar ou fazer stream ao mesmo tempo pode ficar um pouco mais pesado para o OBS."
+    },
+    "win32-priority": {
+      "titulo": "Mais tempo de CPU para a janela em foco",
+      "resumo": "O programa que está na tela recebe fatias de processador maiores e mais frequentes.",
+      "explicacao": "O Windows divide o processador em fatias de tempo. Com este valor (42), a janela em primeiro plano, normalmente o jogo, ganha prioridade sobre o resto.",
+      "ganho": "Jogo respondendo mais rápido quando há outros programas abertos.",
+      "cuidado": ""
+    },
+    "gamedvr-off": {
+      "titulo": "Sem gravação do Xbox Game Bar",
+      "resumo": "O Windows para de gravar o jogo em segundo plano.",
+      "explicacao": "O Game DVR guarda os últimos minutos da partida o tempo todo, gastando placa de vídeo e disco. Se quiser gravar clipes, o OBS ou o recurso da sua placa fazem isso sob demanda.",
+      "ganho": "GPU e disco livres para o jogo.",
+      "cuidado": "Win+Alt+G deixa de gravar clipes."
+    },
+    "hags-on": {
+      "titulo": "GPU gerencia a própria fila",
+      "resumo": "A placa de vídeo organiza o trabalho dela sem passar pelo processador.",
+      "explicacao": "Com o agendamento por hardware (HAGS), a placa de vídeo cuida da própria fila de quadros. Em placas NVIDIA recentes isso reduz a carga na CPU e é exigido por recursos como o DLSS Frame Generation.",
+      "ganho": "Menos trabalho para a CPU e suporte a geração de quadros.",
+      "cuidado": "Se notar travadas em algum jogo específico, teste com ele desligado."
+    },
+    "mpo-off": {
+      "titulo": "Evitar tela piscando com NVIDIA",
+      "resumo": "Desliga um recurso de sobreposição que causa piscadas e tela preta em alguns drivers.",
+      "explicacao": "O MPO (multiplane overlay) deixa o Windows desenhar camadas direto na tela. Com alguns drivers NVIDIA isso gera piscadas, tela preta e travadas em vídeo. Desligado, o Windows usa o caminho tradicional.",
+      "ganho": "Imagem estável em jogo, vídeo e stream.",
+      "cuidado": ""
+    },
+    "windowed-opt-off": {
+      "titulo": "Jogos em janela no modo clássico",
+      "resumo": "O Windows não muda como jogos em janela sem borda são exibidos.",
+      "explicacao": "A otimização para jogos em janela troca o modo de exibição por baixo dos panos. O Vanta deixa desligado para que cada jogo funcione do jeito que foi feito.",
+      "ganho": "Comportamento previsível em jogos antigos e no modo sem borda.",
+      "cuidado": "Alguns jogos DirectX 10 e 11 em janela podem ter latência um pouco maior."
+    },
+    "auto-game-mode": {
+      "titulo": "Modo de Jogo automático desligado",
+      "resumo": "O Windows não mexe em prioridades sozinho quando acha que é um jogo.",
+      "explicacao": "O Modo de Jogo tenta adivinhar o que é jogo e muda o sistema por conta própria. As prioridades que o Vanta aplica já cuidam disso de forma fixa.",
+      "ganho": "Comportamento previsível.",
+      "cuidado": ""
+    },
+    "power-throttle-off": {
+      "titulo": "CPU sem freio de energia",
+      "resumo": "O Windows não reduz a velocidade de programas em segundo plano para economizar energia.",
+      "explicacao": "O Power Throttling deixa apps em segundo plano mais lentos para poupar bateria. Num desktop isso só atrapalha, por exemplo, o OBS gravando enquanto você joga.",
+      "ganho": "OBS, Discord e afins com desempenho total em segundo plano.",
+      "cuidado": "Consumo de energia um pouco maior."
+    },
+    "timer-global": {
+      "titulo": "Timer preciso para todo o sistema",
+      "resumo": "O ajuste de timer de 0,5 ms do ISLC vale para o PC inteiro.",
+      "explicacao": "A partir do Windows 11, cada programa só aproveita o timer de alta precisão que ele mesmo pediu. Este ajuste volta o comportamento antigo, em que o pedido do ISLC beneficia o jogo também.",
+      "ganho": "Tempo entre quadros mais regular.",
+      "cuidado": "Consumo de energia um pouco maior com o ISLC ativo."
+    },
+    "nagle-off": {
+      "titulo": "Pacotes de rede sem espera",
+      "resumo": "Pacotes pequenos saem na hora, sem esperar juntar com outros.",
+      "explicacao": "O algoritmo de Nagle segura pacotes pequenos para mandar vários juntos. Desligado em todas as placas de rede, cada pacote sai assim que fica pronto.",
+      "ganho": "Pode reduzir atraso em jogos e apps que usam TCP.",
+      "cuidado": "A maioria dos jogos competitivos usa UDP; o efeito varia de jogo para jogo."
+    },
+    "net-throttle-off": {
+      "titulo": "Rede sem limite durante áudio e vídeo",
+      "resumo": "O Windows não limita a rede enquanto toca música ou vídeo.",
+      "explicacao": "Por padrão o Windows reduz o processamento de rede quando há mídia tocando, para o som não falhar. Num PC atual isso não é necessário.",
+      "ganho": "Rede com desempenho total com Spotify ou vídeo aberto.",
+      "cuidado": ""
+    },
+    "tcp-ports": {
+      "titulo": "Mais conexões de rede ao mesmo tempo",
+      "resumo": "Mais portas disponíveis e menos tentativas antes de desistir de uma conexão morta.",
+      "explicacao": "Aumenta o limite de portas para conexões de saída e reduz para 3 as retransmissões de pacotes perdidos, para uma conexão quebrada cair mais rápido.",
+      "ganho": "Útil com muitos downloads e torrents ao mesmo tempo.",
+      "cuidado": ""
+    },
+    "paging-exec-off": {
+      "titulo": "Sistema sempre na memória RAM",
+      "resumo": "O núcleo do Windows e os drivers nunca vão para o arquivo de paginação.",
+      "explicacao": "Com RAM sobrando, não faz sentido o Windows mandar partes do próprio sistema para o disco. Aqui elas ficam sempre na memória.",
+      "ganho": "Sistema mais responsivo depois de muito tempo ligado.",
+      "cuidado": "Só faz sentido com bastante RAM (16 GB ou mais)."
+    },
+    "coalescing-off": {
+      "titulo": "Sem agrupar tarefas para economizar energia",
+      "resumo": "O Windows não junta tarefas pequenas para acordar o processador menos vezes.",
+      "explicacao": "Agrupar timers economiza bateria, mas faz algumas tarefas esperarem. Num desktop de jogo o Vanta prefere que elas rodem na hora.",
+      "ganho": "Respostas mais imediatas.",
+      "cuidado": "Consumo de energia um pouco maior."
+    },
+    "long-paths": {
+      "titulo": "Caminhos de pasta longos",
+      "resumo": "Pastas com nomes muito compridos passam a funcionar.",
+      "explicacao": "O Windows limita caminhos a 260 caracteres por padrão. Projetos com Node, Git e Python passam disso com facilidade e dão erro.",
+      "ganho": "Menos erros estranhos ao clonar ou instalar projetos.",
+      "cuidado": ""
+    },
+    "8dot3-off": {
+      "titulo": "Sem nomes curtos antigos",
+      "resumo": "O disco para de criar nomes no formato antigo, como PROGRA~1.",
+      "explicacao": "Nomes 8.3 existem por compatibilidade com programas dos anos 90. Desligado, criar arquivos fica um pouco mais leve.",
+      "ganho": "",
+      "cuidado": "Programas muito antigos que dependem desses nomes podem falhar."
+    },
+    "sysmain-off": {
+      "titulo": "Sem pré-carregamento de apps",
+      "resumo": "O SysMain (Superfetch) deixa de carregar apps na memória antes de você abrir.",
+      "explicacao": "Num SSD rápido, o pré-carregamento ajuda pouco e gera leitura de disco e uso de memória em momentos aleatórios.",
+      "ganho": "Disco e memória quietos em segundo plano.",
+      "cuidado": "O primeiro abrir de alguns apps pode ser um pouco mais lento."
+    },
+    "diagtrack-off": {
+      "titulo": "Serviço de telemetria parado",
+      "resumo": "O serviço que coleta e envia dados de uso fica desligado.",
+      "explicacao": "O DiagTrack (Experiências do Usuário Conectado) é quem de fato coleta e envia a telemetria. Combinado com \"Telemetria no mínimo\", a coleta para.",
+      "ganho": "Menos atividade de rede e disco em segundo plano.",
+      "cuidado": ""
+    },
+    "fth-off": {
+      "titulo": "Sem remendos automáticos em apps",
+      "resumo": "O Windows não aplica correções de memória escondidas em apps que travaram.",
+      "explicacao": "Depois que um app trava algumas vezes, o Windows passa a rodá-lo com proteções de memória que o deixam mais lento, sem avisar. Aqui isso não acontece.",
+      "ganho": "Jogos e apps sempre com desempenho normal.",
+      "cuidado": "Um app que trava muito pode continuar travando em vez de ser remendado."
+    },
+    "wpbt-off": {
+      "titulo": "Bloquear instalador da placa-mãe",
+      "resumo": "O Windows não executa o programa que a placa-mãe esconde no firmware.",
+      "explicacao": "Algumas placas-mãe (ASUS, MSI, Gigabyte) instalam utilitários sozinhas a cada formatação, pela tabela WPBT. Este ajuste impede.",
+      "ganho": "Nenhum Armoury Crate ou similar aparecendo sem você pedir.",
+      "cuidado": ""
+    },
+    "vbs-hvci": {
+      "titulo": "Isolamento de núcleo",
+      "resumo": "Proteção de memória do Windows. Começa travada porque o Vanguard do Valorant exige.",
+      "explicacao": "O VBS e a integridade de memória (HVCI) usam virtualização para impedir que drivers maliciosos rodem no núcleo do sistema. O Vanguard da Riot exige que estejam ligados; só destrave abaixo se você não joga Valorant nem outro jogo com anti-cheat que exige isso.",
+      "ganho": "Valorant funcionando e proteção contra drivers maliciosos.",
+      "cuidado": "Custa um pouco de desempenho, mas sem ele o Valorant não abre."
+    },
+    "smartscreen": {
+      "titulo": "Aviso antes de abrir downloads",
+      "resumo": "O Windows avisa antes de abrir um arquivo baixado desconhecido.",
+      "explicacao": "O SmartScreen confere a reputação de programas baixados. Se ninguém conhece o arquivo, aparece um aviso e você decide se abre.",
+      "ganho": "Uma barreira a mais contra programas maliciosos.",
+      "cuidado": ""
+    },
+    "uac-secure": {
+      "titulo": "Pedido de administrador protegido",
+      "resumo": "A janela que pede permissão de administrador aparece na tela escurecida.",
+      "explicacao": "Na área de trabalho protegida, nenhum outro programa consegue clicar no \"Sim\" por você.",
+      "ganho": "Segurança.",
+      "cuidado": ""
+    },
+    "motw": {
+      "titulo": "Marcar arquivos da internet",
+      "resumo": "Arquivos baixados guardam a origem e passam pelo antivírus ao abrir.",
+      "explicacao": "É a marca que faz o Windows e o Office tratarem downloads com mais cuidado. O Vanta mantém ligada.",
+      "ganho": "Segurança.",
+      "cuidado": ""
+    },
+    "crash-dump": {
+      "titulo": "Guardar informação de tela azul",
+      "resumo": "Salva um arquivo pequeno quando acontece uma tela azul.",
+      "explicacao": "O minidump registra qual driver causou o travamento. Sem ele, descobrir a causa de uma tela azul vira adivinhação.",
+      "ganho": "Diagnóstico possível quando algo der errado.",
+      "cuidado": ""
+    },
+    "remote-assist-off": {
+      "titulo": "Assistência Remota desligada",
+      "resumo": "Ninguém consegue pedir para controlar seu PC pela Assistência Remota do Windows.",
+      "explicacao": "A Assistência Remota é muito usada em golpes de falso suporte técnico. Desligada, o convite nem pode ser aceito.",
+      "ganho": "Segurança contra golpes.",
+      "cuidado": "Ferramentas como AnyDesk e TeamViewer continuam funcionando."
+    },
+    "typing-data-off": {
+      "titulo": "Desligar envio de dados de digitação e escrita à mão",
+      "resumo": "Impede que o Windows colete dados de digitação e tinta para personalização.",
+      "explicacao": "Desativa a coleta de estatísticas de escrita e digitação pelo sistema sem afetar o uso de caneta ou mesa digitalizadora.",
+      "ganho": "Mais privacidade no uso diário sem perder recursos de caneta.",
+      "cuidado": "O teclado virtual pode aprender palavras novas mais devagar."
+    },
+    "feedback-off": {
+      "titulo": "Nunca pedir feedback do Windows",
+      "resumo": "Desativa as notificações periódicas do Windows pedindo avaliações.",
+      "explicacao": "Define a frequência de solicitações de comentários do Windows como Nunca.",
+      "ganho": "Menos interrupções na área de trabalho.",
+      "cuidado": "Nenhum efeito colateral conhecido."
+    },
+    "tailored-off": {
+      "titulo": "Desligar experiências personalizadas",
+      "resumo": "Impede recomendações baseadas nos dados de diagnóstico do PC.",
+      "explicacao": "Desativa o uso de dados de telemetria para personalizar dicas, anúncios e sugestões no Windows.",
+      "ganho": "Menos conteúdo promocional e mais privacidade.",
+      "cuidado": "Nenhum efeito colateral conhecido."
+    },
+    "settings-tips-off": {
+      "titulo": "Sem dicas online nas Configurações",
+      "resumo": "Remove sugestões e dicas online exibidas dentro do app Configurações.",
+      "explicacao": "Define AllowOnlineTips = 0 para manter o app Configurações focado apenas nas opções do sistema.",
+      "ganho": "Configurações mais limpas e sem banners extras.",
+      "cuidado": "Links de ajuda online do app Configurações ficam ocultos."
+    },
+    "settings-ads-off": {
+      "titulo": "Sem anúncios nas Configurações e notificações de conta no Iniciar",
+      "resumo": "Oculta conteúdo sugerido nas Configurações e alertas promocionais da conta Microsoft no Menu Iniciar.",
+      "explicacao": "Desativa conteúdo patrocinado nas Configurações e notificações relacionadas à conta Microsoft no Iniciar.",
+      "ganho": "Menu Iniciar e Configurações mais limpos.",
+      "cuidado": "Avisos da conta Microsoft (como backup do OneDrive) deixam de aparecer no Iniciar."
+    },
+    "lockscreen-tips-off": {
+      "titulo": "Sem dicas e curiosidades na tela de bloqueio",
+      "resumo": "Remove textos promocionais e curiosidades sobre o papel de parede da tela de bloqueio (Windows Pro).",
+      "explicacao": "Desativa sobreposições de dicas e curiosidades na tela de bloqueio via política do sistema.",
+      "ganho": "Tela de bloqueio limpa destacando o papel de parede do Vanta.",
+      "cuidado": "Aplica-se apenas a edições Windows Pro ou superiores."
+    },
+    "clicktodo-off": {
+      "titulo": "Desligar Click To Do (IA na tela)",
+      "resumo": "Desativa o recurso de análise de texto e imagem por IA sobre a tela (build 26100+).",
+      "explicacao": "Define DisableClickToDo = 1 para impedir a análise visual por IA nas capturas e sobreposições do Windows 11.",
+      "ganho": "Mais privacidade e menos processos de IA em segundo plano.",
+      "cuidado": "Disponível apenas no Windows 11 build 26100 ou mais recente."
+    },
+    "services-manual": {
+      "titulo": "Serviços opcionais em modo Manual",
+      "resumo": "Coloca MapsBroker, RetailDemo, WMPNetworkSvc e Fax em Manual.",
+      "explicacao": "Muda o início desses serviços opcionais para Manual: eles não sobem no boot, mas iniciam normalmente se algum programa precisar.",
+      "ganho": "Menos serviços ociosos após ligar o PC sem quebrar nada.",
+      "cuidado": "Pode ser revertido individualmente na página Serviços ou pelo Desfazer."
+    }
+  },
+  "programas": {
+    "Brave": "Navegador com bloqueio de anúncios e rastreadores embutido.",
+    "Google Chrome": "Navegador do Google, sincroniza com sua conta Google.",
+    "Mozilla Firefox": "Navegador independente, focado em privacidade.",
+    "Steam": "Loja e biblioteca de jogos da Valve.",
+    "Riot Client": "Launcher do Valorant e do League of Legends, com o Vanguard.",
+    "Epic Games Launcher": "Loja da Epic, com Fortnite e jogos grátis toda semana.",
+    "Discord": "Chat de voz e texto.",
+    "Vencord": "Mod do Discord com temas e plugins. Não é oficial e vai contra os termos do Discord; use por sua conta.",
+    "TeamSpeak 3": "Chat de voz leve, usado por clãs e servidores.",
+    "Logitech G HUB": "Configura mouse, teclado e headset Logitech.",
+    "Equalizer APO + Peace": "Equalizador do sistema inteiro, usado no seu microfone.",
+    "ISLC": "Limpa a memória em espera e ajusta o timer do Windows.",
+    "MSI Afterburner": "Monitora FPS e temperatura e ajusta a placa de vídeo.",
+    "OBS Studio": "Grava e transmite. Seu replay buffer volta configurado.",
+    "VLC": "Toca qualquer vídeo ou áudio sem precisar de codec.",
+    "FFmpeg": "Converte e corta vídeo e áudio pela linha de comando.",
+    "HandBrake": "Comprime e converte vídeos com interface simples.",
+    "Spotifast": "Spotify mais leve: app nativo feito em Rust, código aberto (GitHub crmne/spotifast). Abre mais rápido e usa menos memória. Para tocar música precisa de Spotify Premium; conta grátis só navega e busca. Não é da Spotify.",
+    "Spotify (oficial)": "App oficial do Spotify.",
+    "NanaZip": "Compactador moderno baseado no 7-Zip, integrado ao Windows 11.",
+    "7-Zip": "Compactador clássico, abre zip, rar e 7z.",
+    "WinRAR": "Compactador tradicional para arquivos .rar.",
+    "Lightshot": "Captura de tela rápida com a tecla PrintScreen.",
+    "ShareX": "Captura de tela e gravação com muitos recursos.",
+    "qBittorrent": "Cliente de torrent sem anúncios.",
+    "Notepad++": "Editor de texto para configs e scripts.",
+    "LibreOffice": "Pacote de escritório grátis: textos, planilhas e slides.",
+    "ZapFast": "WhatsApp mais leve e rápido: app nativo feito em Rust, do mesmo criador do Spotifast (GitHub crmne/zapfast). É um app não oficial, sem ligação com WhatsApp ou Meta, e o próprio projeto avisa que há risco para a conta.",
+    "Overview": "Seu app, com a tarefa agendada e os dados restaurados.",
+    "BatteryHub-plus": "Seu app, restaurado a partir do pacote.",
+    "LMUFFB": "Restaurado do pacote numa pasta do D:, com o seu .ini.",
+    "ArtCraft Launcher": "Launcher restaurado a partir do pacote.",
+    "MultiViewer": "Assiste à F1 com várias câmeras e telemetria ao vivo.",
+    "Claude (desktop)": "App do Claude para Windows.",
+    "Claude Code": "Claude no terminal, para programar.",
+    "Windows Terminal": "Terminal moderno com abas para PowerShell e outros.",
+    "Git": "Controle de versão para projetos de código.",
+    "GitHub CLI": "Comandos do GitHub direto no terminal.",
+    "Python 3.12": "Linguagem Python, usada pelos scripts do Vanta.",
+    "uv": "Gerenciador rápido de pacotes Python.",
+    "Node.js": "Roda JavaScript fora do navegador.",
+    "Bun": "Runtime JavaScript rápido, alternativa ao Node.",
+    "MSYS2": "Ferramentas Unix e compiladores no Windows.",
+    "Inno Setup": "Cria instaladores para Windows.",
+    "Java 8": "Java para programas e jogos que ainda pedem a versão 8.",
+    "VS Code": "Editor de código da Microsoft.",
+    "Tailscale": "Rede privada entre seus aparelhos, sem abrir portas.",
+    "Cloudflare WARP": "Conexão protegida e DNS rápido da Cloudflare.",
+    "NVCleanstall": "Instala o driver da NVIDIA só com o necessário, sem telemetria nem extras. Só para placas NVIDIA.",
+    "NVCleanstall (NVIDIA 610.88)": "Instala o driver NVIDIA 610.88 sem os extras desnecessários."
+  }
+}

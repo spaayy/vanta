@@ -1,0 +1,215 @@
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSReviewUnusedParameter',
+    '',
+    Justification = 'The environment-phase harness stubs declare the same parameters as the commands they shadow.'
+)]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSAvoidOverwritingBuiltInCmdlets',
+    '',
+    Justification = 'The isolated environment-phase harness shadows Import-Module and Write-Host only while executing the phase under test.'
+)]
+param()
+
+BeforeAll {
+    . (Join-Path $PSScriptRoot 'VantaTestHost.ps1')
+    Import-Module -Name (Join-Path -Path $script:VantaTestModulesRoot -ChildPath 'Vanta.Core\Vanta.Core.psd1') -Force
+    Import-Module -Name (Join-Path -Path $script:VantaTestModulesRoot -ChildPath 'Vanta.Registry\Vanta.Registry.psd1') -Force
+
+    $script:phasePath = Join-Path -Path $script:VantaTestScriptsRoot -ChildPath 'Install\Phases\Invoke-EnvironmentPhase.ps1'
+    $script:testRoot = 'HKCU:\Software\VantaRewriteTest'
+    $script:policySubKey = 'Software\VantaRewriteTest\ExecutionPolicy\ShellIds\Microsoft.PowerShell'
+
+    function Get-TestExecutionPolicyValue {
+        param([Parameter(Mandatory = $true)][Microsoft.Win32.RegistryView]$View)
+
+        $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+            [Microsoft.Win32.RegistryHive]::CurrentUser, $View
+        )
+        try {
+            $key = $baseKey.OpenSubKey($script:policySubKey, $false)
+            if ($null -eq $key) {
+                return $null
+            }
+            try {
+                return $key.GetValue('ExecutionPolicy', $null)
+            }
+            finally {
+                $key.Dispose()
+            }
+        }
+        finally {
+            $baseKey.Dispose()
+        }
+    }
+
+    function Invoke-VantaEnvironmentPhaseForTest {
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory = $true)][string]$Path,
+            [Parameter(Mandatory = $true)]$Context,
+            [Parameter(Mandatory = $true)]$Calls,
+            [Parameter(Mandatory = $true)]$Logs
+        )
+
+        & {
+            function Assert-VantaPrivilege {
+                [CmdletBinding()]
+                param([switch]$TrustedInstaller)
+                [void]$TrustedInstaller
+                [void]$Calls.Add('Assert-VantaPrivilege')
+            }
+
+            function Import-Module {
+                [CmdletBinding()]
+                param([string]$Name, [switch]$Force)
+                [void]$Force
+                [void]$Calls.Add("Import-Module:$(Split-Path -Path $Name -Leaf)")
+            }
+
+            function Get-VantaContext {
+                return $Context
+            }
+
+            function Set-VantaWindowsPowerShellExecutionPolicy {
+                [void]$Calls.Add('Set-VantaWindowsPowerShellExecutionPolicy')
+            }
+
+            function Write-VantaLog {
+                param(
+                    [string]$Level = 'Information',
+                    [Parameter(Mandatory = $true)][string]$Message
+                )
+                [void]$Logs.Add([pscustomobject]@{ Level = $Level; Message = $Message })
+                # After logging its execution policy decision the phase NGENs the loaded
+                # assemblies and writes a machine environment variable; neither belongs in
+                # a test process, so the harness stops the phase at that first log entry.
+                throw [OperationCanceledException]::new('environment phase harness stop')
+            }
+
+            function Write-Host {
+                param([Parameter(ValueFromRemainingArguments = $true)]$Arguments)
+                [void]$Arguments
+            }
+
+            . $Path
+        }
+    }
+}
+
+AfterAll {
+    Remove-Item -Path 'HKCU:\Software\VantaRewriteTest' -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Describe 'Set-VantaWindowsPowerShellExecutionPolicy' {
+    BeforeEach {
+        Remove-Item -Path $script:testRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    AfterEach {
+        Remove-Item -Path $script:testRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'writes RemoteSigned into every registry view and reads it back' {
+        # HKCU\Software is one key in both views, so reading the value back cannot show a
+        # skipped view. Record the view of each key the function checks instead.
+        $script:checkedViews = New-Object 'Collections.Generic.List[Microsoft.Win32.RegistryView]'
+        Mock -CommandName Get-VantaWindowsPowerShellExecutionPolicyValue -ModuleName Vanta.Registry -MockWith {
+            $script:checkedViews.Add($Key.View)
+            [string]$Key.GetValue('ExecutionPolicy', $null)
+        }
+
+        Set-VantaWindowsPowerShellExecutionPolicy `
+            -Hive ([Microsoft.Win32.RegistryHive]::CurrentUser) -SubKey $script:policySubKey
+
+        $views = if ([Environment]::Is64BitOperatingSystem) {
+            @([Microsoft.Win32.RegistryView]::Registry64, [Microsoft.Win32.RegistryView]::Registry32)
+        }
+        else {
+            @([Microsoft.Win32.RegistryView]::Default)
+        }
+        @($script:checkedViews) | Should -Be $views
+        foreach ($view in $views) {
+            Get-TestExecutionPolicyValue -View $view | Should -BeExactly 'RemoteSigned'
+        }
+    }
+
+    It 'replaces a different existing policy without touching sibling values' {
+        New-Item -Path "HKCU:\$script:policySubKey" -Force | Out-Null
+        Set-ItemProperty -Path "HKCU:\$script:policySubKey" -Name ExecutionPolicy -Value 'Restricted'
+        Set-ItemProperty -Path "HKCU:\$script:policySubKey" -Name Path `
+            -Value 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+
+        Set-VantaWindowsPowerShellExecutionPolicy `
+            -Hive ([Microsoft.Win32.RegistryHive]::CurrentUser) -SubKey $script:policySubKey
+
+        $key = Get-ItemProperty -Path "HKCU:\$script:policySubKey"
+        $key.ExecutionPolicy | Should -BeExactly 'RemoteSigned'
+        $key.Path | Should -BeExactly 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+    }
+
+    It 'throws when the written value does not retain RemoteSigned' {
+        Mock -CommandName Get-VantaWindowsPowerShellExecutionPolicyValue -ModuleName Vanta.Registry -MockWith {
+            'Unrestricted'
+        }
+
+        {
+            Set-VantaWindowsPowerShellExecutionPolicy `
+                -Hive ([Microsoft.Win32.RegistryHive]::CurrentUser) -SubKey $script:policySubKey
+        } | Should -Throw '*did not retain RemoteSigned*'
+    }
+
+    It 'defaults to the machine Windows PowerShell shell ID key' {
+        # The environment phase relies on these defaults, and an elevated write cannot run
+        # here. The read-back check reads the key it wrote, so a wrong default passes it.
+        $command = Get-Command -Name Set-VantaWindowsPowerShellExecutionPolicy -Module Vanta.Registry
+        $defaults = @{}
+        foreach ($parameter in $command.ScriptBlock.Ast.Body.ParamBlock.Parameters) {
+            $defaults[$parameter.Name.VariablePath.UserPath] = $parameter.DefaultValue
+        }
+        (& ([scriptblock]::Create($defaults['Hive'].Extent.Text))) |
+            Should -Be ([Microsoft.Win32.RegistryHive]::LocalMachine)
+        $defaults['SubKey'].SafeGetValue() |
+            Should -BeExactly 'SOFTWARE\Microsoft\PowerShell\1\ShellIds\Microsoft.PowerShell'
+    }
+}
+
+Describe 'Environment phase execution policy gate' {
+    BeforeEach {
+        $script:phaseCalls = New-Object 'Collections.Generic.List[string]'
+        $script:phaseLogs = New-Object 'Collections.Generic.List[object]'
+    }
+
+    It 'sets RemoteSigned for a fresh install' {
+        $context = [pscustomobject]@{ IsUpgrade = $false }
+
+        {
+            Invoke-VantaEnvironmentPhaseForTest -Path $script:phasePath -Context $context `
+                -Calls $script:phaseCalls -Logs $script:phaseLogs
+        } | Should -Throw 'environment phase harness stop'
+
+        @($script:phaseCalls) | Should -Be @(
+            'Assert-VantaPrivilege',
+            'Import-Module:Vanta.Registry.psd1',
+            'Set-VantaWindowsPowerShellExecutionPolicy'
+        )
+        $script:phaseLogs.Count | Should -Be 1
+        $script:phaseLogs[0].Level | Should -BeExactly 'Information'
+        $script:phaseLogs[0].Message | Should -BeLike '*RemoteSigned for the fresh install*'
+    }
+
+    It 'preserves the existing policy during an upgrade' {
+        $context = [pscustomobject]@{ IsUpgrade = $true }
+
+        {
+            Invoke-VantaEnvironmentPhaseForTest -Path $script:phasePath -Context $context `
+                -Calls $script:phaseCalls -Logs $script:phaseLogs
+        } | Should -Throw 'environment phase harness stop'
+
+        @($script:phaseCalls) | Should -Be @(
+            'Assert-VantaPrivilege',
+            'Import-Module:Vanta.Registry.psd1'
+        )
+        $script:phaseLogs.Count | Should -Be 1
+        $script:phaseLogs[0].Message | Should -BeLike '*Preserving the existing Windows PowerShell execution policy*'
+    }
+}

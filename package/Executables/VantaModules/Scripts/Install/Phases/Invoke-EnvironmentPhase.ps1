@@ -1,0 +1,36 @@
+# Environment phase.
+# Configures PowerShell before the rest of the install runs:
+#   - NGEN the loaded .NET assemblies (speeds up PowerShell startup ~10x)
+#   - Set Windows PowerShell to RemoteSigned on fresh installs
+#   - Opt out of PowerShell Core telemetry (machine scope)
+# Runs as TrustedInstaller; the HKLM value and machine environment variable are not user
+# state. NGEN failing must not abort the install.
+
+Assert-VantaPrivilege -TrustedInstaller
+
+$scriptsRoot = Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent
+$modulesRoot = Join-Path -Path $scriptsRoot -ChildPath 'Modules'
+Import-Module -Name (Join-Path $modulesRoot 'Vanta.Registry\Vanta.Registry.psd1') -Force -ErrorAction Stop
+
+$context = Get-VantaContext
+if (-not $context.IsUpgrade) {
+    Set-VantaWindowsPowerShellExecutionPolicy
+    Write-VantaLog -Message 'Set 64-bit and 32-bit Windows PowerShell execution policy to RemoteSigned for the fresh install.'
+}
+else {
+    Write-VantaLog -Message 'Preserving the existing Windows PowerShell execution policy during upgrade or reapply.'
+}
+
+# Precompile the loaded .NET assemblies with NGEN, which speeds up PowerShell startup.
+try {
+    $env:path = "$([Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory());" + $env:path
+    [AppDomain]::CurrentDomain.GetAssemblies().Location | Where-Object { $_ } | ForEach-Object {
+        Write-Host "NGENing: $(Split-Path $_ -Leaf)" -ForegroundColor Yellow
+        ngen install $_ | Out-Null
+    }
+}
+catch {
+    Write-VantaLog -Level Warning -Message "NGEN optimization failed: $($_.Exception.Message)"
+}
+
+[Environment]::SetEnvironmentVariable('POWERSHELL_TELEMETRY_OPTOUT', '1', 'Machine')

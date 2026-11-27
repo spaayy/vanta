@@ -1,0 +1,148 @@
+# Build-Iso.ps1 dot-sources this, elevated on the PC that builds the ISO, when the
+# build copies this PC's network drivers. It exports only the packages that this PC's
+# physical Ethernet and Wi-Fi adapters use. PnPUtil reads the driver store; nothing
+# here installs or changes the host's drivers.
+function Get-VantaNetworkDeviceIds {
+    $devices = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($adapter in @(Get-NetAdapter -Physical -IncludeHidden -ErrorAction Stop)) {
+        # IANA interface types: 6 = Ethernet (ethernetCsmacd), 71 = Wi-Fi (ieee80211).
+        if ($adapter.InterfaceType -in @(6, 71) -and $adapter.PnPDeviceID) { [void]$devices.Add([string]$adapter.PnPDeviceID) }
+    }
+    return ,$devices
+}
+
+function Assert-VantaNetworkContinue([string]$CancelFile) {
+    if (Test-Path -LiteralPath $CancelFile) { throw (New-Object OperationCanceledException 'Network driver export cancelled.') }
+}
+
+# A complete driver package has at least one .inf and one .cat catalog file.
+function Test-VantaDriverPackage([string]$Folder) {
+    $files = @(Get-ChildItem -LiteralPath $Folder -File -Recurse -Force)
+    return @($files | Where-Object Extension -eq '.inf').Count -gt 0 -and @($files | Where-Object Extension -eq '.cat').Count -gt 0
+}
+
+function Get-VantaNetworkPackages {
+    $devices = Get-VantaNetworkDeviceIds
+    $packages = @{}
+    foreach ($driver in @(Get-CimInstance -ClassName Win32_PnPSignedDriver -Filter "DeviceClass = 'NET'" -ErrorAction Stop)) {
+        if (-not $devices.Contains([string]$driver.DeviceID)) { continue }
+        # Inbox drivers are provided by Windows and cannot be exported by PnPUtil.
+        if ([string]$driver.InfName -notmatch '^oem[0-9]+\.inf$') { continue }
+        if (-not $driver.IsSigned) { throw 'An installed network driver is unsigned. Turn off network driver copying and obtain a signed driver from the device manufacturer.' }
+        $packages[[string]$driver.InfName] = [pscustomobject]@{
+            inf = [string]$driver.InfName
+            name = [string]$driver.DeviceName
+            provider = [string]$driver.DriverProviderName
+            version = [string]$driver.DriverVersion
+        }
+    }
+    return @($packages.Values | Sort-Object inf)
+}
+
+function Get-VantaNetworkHardwareIds {
+    $devices = Get-VantaNetworkDeviceIds
+    $ids = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($device in @(Get-CimInstance -ClassName Win32_PnPEntity -Filter "PNPClass = 'Net'" -ErrorAction Stop)) {
+        if (-not $devices.Contains([string]$device.DeviceID)) { continue }
+        foreach ($id in @($device.HardwareID) + @($device.CompatibleID)) {
+            if ($id) { [void]$ids.Add([string]$id) }
+        }
+    }
+    return ,$ids
+}
+
+function Test-VantaNetworkUpdate($Update, $HardwareIds) {
+    # Update type 2 = driver (utDriver).
+    return ([int]$Update.Type -eq 2 -and [string]$Update.DriverClass -ieq 'Net' -and $HardwareIds.Contains([string]$Update.DriverHardwareID))
+}
+
+function Assert-VantaNetworkDownloadConnection {
+    $null = [Windows.Networking.Connectivity.NetworkInformation, Windows.Networking.Connectivity, ContentType=WindowsRuntime]
+    $connectionProfile = [Windows.Networking.Connectivity.NetworkInformation]::GetInternetConnectionProfile()
+    if ($null -eq $connectionProfile -or [string]$connectionProfile.GetNetworkConnectivityLevel() -ne 'InternetAccess') { throw 'Connect to the internet to check for newer network drivers, or choose installed drivers only.' }
+    $cost = $connectionProfile.GetConnectionCost()
+    if ([string]$cost.NetworkCostType -ne 'Unrestricted' -or $cost.Roaming -or $cost.OverDataLimit -or $cost.BackgroundDataUsageRestricted) {
+        throw 'Use an unmetered connection to download network drivers, or choose installed drivers only.'
+    }
+}
+
+function Export-VantaNetworkUpdates([string]$Destination, [string]$CancelFile, [string]$LogPath) {
+    $ids = Get-VantaNetworkHardwareIds
+    if ($ids.Count -eq 0) { throw 'No physical Wi-Fi or Ethernet hardware could be matched to Windows Update.' }
+    Assert-VantaNetworkDownloadConnection
+    Assert-VantaNetworkContinue $CancelFile
+    $session = New-Object -ComObject Microsoft.Update.Session
+    $session.ClientApplicationID = 'Vanta ISO network drivers'
+    $searcher = $session.CreateUpdateSearcher()
+    $searcher.Online = $true
+    # Query the public Windows Update service (ServerSelection 2, ssWindowsUpdate)
+    # without changing the PC's driver policy. No installer is created; this PC is
+    # never updated.
+    $searcher.ServerSelection = 2
+    $found = $searcher.Search("IsInstalled=0 and IsHidden=0 and Type='Driver'")
+    # ResultCode 2 = succeeded (orcSucceeded).
+    if ([int]$found.ResultCode -ne 2) { throw 'Windows Update could not complete the network driver search.' }
+    $updates = New-Object -ComObject Microsoft.Update.UpdateColl
+    $downloadBytes = [decimal]0
+    foreach ($update in $found.Updates) {
+        if (Test-VantaNetworkUpdate $update $ids) {
+            if (-not $update.EulaAccepted) { $update.AcceptEula() }
+            [void]$updates.Add($update)
+            $downloadBytes += [decimal]$update.MaxDownloadSize
+        }
+    }
+    if ($updates.Count -eq 0) { 'No newer matching network drivers offered; retaining installed packages.' | Add-Content -LiteralPath $LogPath -Encoding UTF8; return @() }
+    if ($updates.Count -gt 32) { throw 'Windows Update returned too many network packages for this Beta.' }
+    if ($downloadBytes -gt 2GB) { throw 'The offered network drivers exceed the 2 GB Beta download limit.' }
+    Assert-VantaNetworkContinue $CancelFile
+    $downloader = $session.CreateUpdateDownloader()
+    $downloader.Updates = $updates
+    $download = $downloader.Download()
+    if ([int]$download.ResultCode -ne 2) { throw 'Windows Update could not download every selected network driver.' }
+    $report = @()
+    for ($index = 0; $index -lt $updates.Count; $index++) {
+        Assert-VantaNetworkContinue $CancelFile
+        $update = $updates.Item($index)
+        $folder = Join-Path $Destination "windows-update-$index"
+        [void][IO.Directory]::CreateDirectory($folder)
+        # Use complete signed driver files, never restore the WUA cache into the
+        # reinstalled OS. Some driver packages are still cabinets after CopyFromCache.
+        $update.CopyFromCache($folder, $true)
+        foreach ($cab in @(Get-ChildItem -LiteralPath $folder -Filter '*.cab' -File -Recurse)) {
+            & (Join-Path $env:WINDIR 'System32\expand.exe') '-F:*' $cab.FullName $folder | Add-Content -LiteralPath $LogPath -Encoding UTF8
+            if ($LASTEXITCODE -ne 0) { throw 'A downloaded network driver could not be extracted.' }
+        }
+        if (-not (Test-VantaDriverPackage $folder)) { throw 'Windows Update did not provide a complete driver package. Choose installed drivers only.' }
+        $report += [pscustomobject]@{ source='windows-update'; name=[string]$update.Title; updateId=[string]$update.Identity.UpdateID }
+    }
+    return $report
+}
+
+# Returns the packages copied, or none when this PC's Wi-Fi and Ethernet
+# adapters use only drivers that come with Windows: the build then includes
+# no network drivers and says so, rather than failing or claiming a copy.
+function Export-VantaNetworkDrivers([string]$Destination, [string]$CancelFile, [string]$LogPath, [switch]$CheckUpdates) {
+    $packages = @(Get-VantaNetworkPackages)
+    if ($packages.Count -eq 0 -and -not $CheckUpdates) {
+        'No third-party Wi-Fi or Ethernet driver is installed; Windows includes the drivers these adapters use.' | Add-Content -LiteralPath $LogPath -Encoding UTF8
+        return @()
+    }
+    [void][IO.Directory]::CreateDirectory($Destination)
+    foreach ($package in $packages) {
+        Assert-VantaNetworkContinue $CancelFile
+        $folder = Join-Path $Destination ([IO.Path]::GetFileNameWithoutExtension($package.inf))
+        [void][IO.Directory]::CreateDirectory($folder)
+        & (Join-Path $env:WINDIR 'System32\pnputil.exe') /export-driver $package.inf $folder | Add-Content -LiteralPath $LogPath -Encoding UTF8
+        if ($LASTEXITCODE -ne 0) { throw "Windows could not export network driver $($package.inf). See the network driver log." }
+        if (-not (Test-VantaDriverPackage $folder)) { throw "Network driver export is incomplete: $($package.inf)." }
+    }
+    if ($CheckUpdates) { $packages += @(Export-VantaNetworkUpdates -Destination $Destination -CancelFile $CancelFile -LogPath $LogPath) }
+    if ($packages.Count -eq 0) {
+        'Neither the installed drivers nor Windows Update had a Wi-Fi or Ethernet driver to add; Windows includes the drivers these adapters use.' | Add-Content -LiteralPath $LogPath -Encoding UTF8
+        [IO.Directory]::Delete($Destination, $true)
+        return @()
+    }
+    $bytes = [long](Get-ChildItem -LiteralPath $Destination -File -Recurse -Force | Measure-Object Length -Sum).Sum
+    if ($bytes -gt 2GB) { throw 'The network driver packages exceed the 2 GB Beta limit.' }
+    return $packages
+}

@@ -1,0 +1,31 @@
+[package]
+name = "vanta-sys"
+version = "0.1.0"
+edition = "2024"
+description = "Implementações reais dos traits do vanta-core: cópia atômica, winget, lote elevado (UAC), registro e microfone."
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+vanta-core = { path = "../core" }
+regex = "1"
+sha2 = "0.10"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+serde_json = "1"
+windows-registry = "0.100"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_System_Registry",
+    "Win32_System_Services",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+tempfile = "3"
+

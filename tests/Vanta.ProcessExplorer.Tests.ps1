@@ -1,0 +1,458 @@
+BeforeAll {
+    . (Join-Path $PSScriptRoot 'VantaTestHost.ps1')
+    $script:RepoRoot = Split-Path -Parent $PSScriptRoot
+    $script:PackageHelperPath = Join-Path $script:RepoRoot `
+        'package\Executables\VantaModules\Scripts\Operations\ProcessExplorer-Package.ps1'
+    $script:UpgradeStopPath = Join-Path $script:RepoRoot `
+        'package\Executables\VantaModules\Scripts\Install\Tasks\Stop-ProcessExplorerUpgrade.ps1'
+    . $script:PackageHelperPath
+}
+
+Describe 'Process Explorer package identity' {
+    It 'selects the native binary and its SHA-256 for <Architecture>' -TestCases @(
+        @{ Architecture = 'X86'; Name = 'procexp.exe' }
+        @{ Architecture = 'X64'; Name = 'procexp64.exe' }
+        @{ Architecture = 'ARM64'; Name = 'procexp64a.exe' }
+    ) {
+        $binary = Get-VantaProcessExplorerBinary -Architecture $Architecture
+        $binary.ArchiveName | Should -BeExactly $Name
+        $binary.Sha256 | Should -MatchExactly '^[0-9a-f]{64}$'
+    }
+}
+
+Describe 'Process Explorer boot driver protection' {
+    It 'rejects disabling pcw at startup type <Start> before publishing any package changes' -TestCases @(
+        @{ Start = 0 }
+        @{ Start = 1 }
+    ) {
+        param($Start)
+        $script:PcwStart = $Start
+        Mock Get-VantaProcessExplorerLayout {
+            [pscustomobject]@{
+                StatePath = 'TestDrive:\missing.json'
+                IfeoPath = 'TestRegistry:\unused'
+                ShortcutPath = 'TestDrive:\missing.lnk'
+                PcwPath = 'TestRegistry:\pcw'
+            }
+        }
+        Mock Read-VantaProcessExplorerState { $null }
+        Mock Get-VantaProcessExplorerDebugger { [pscustomobject]@{ Exists = $false } }
+        Mock Get-VantaProcessExplorerShortcutTarget { $null }
+        Mock Get-VantaProcessExplorerPcwStart { $script:PcwStart }
+        Mock Assert-VantaProcessExplorerInstallOwnership {}
+        Mock New-VantaProtectedStagingDirectory {}
+        Mock Invoke-VantaProcessExplorerPcwStartUpdate {}
+
+        { Install-VantaProcessExplorerPackageCore -DisablePcw $true } |
+            Should -Throw '*boot or system-start driver*'
+        Should -Invoke Assert-VantaProcessExplorerInstallOwnership -Times 0 -Exactly
+        Should -Invoke New-VantaProtectedStagingDirectory -Times 0 -Exactly
+        Should -Invoke Invoke-VantaProcessExplorerPcwStartUpdate -Times 0 -Exactly
+    }
+}
+
+Describe 'Process Explorer registry provider integration' {
+    It 'writes, replaces and removes debugger values without changing unrelated values' {
+        # Use Pester's isolated HKCU registry; never touch the real machine IFEO.
+        $path = 'TestRegistry:\ProcessExplorerDebugger'
+        New-Item -Path $path -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name 'Unrelated' -Value 7 -PropertyType DWord | Out-Null
+        foreach ($kind in @('String', 'ExpandString')) {
+            $value = '%SystemRoot%\VantaModules\Apps\ProcessExplorer\procexp.exe'
+            Write-VantaProcessExplorerDebugger -IfeoPath $path -State ([pscustomobject]@{
+                Exists = $true; Value = $value; Kind = $kind
+            })
+            $actual = Get-VantaProcessExplorerDebugger -IfeoPath $path
+            $actual.Exists | Should -BeTrue
+            $actual.Value | Should -BeExactly $value
+            $actual.Kind | Should -Be $kind
+        }
+        $absent = [pscustomobject]@{ Exists = $false; Value = $null; Kind = $null }
+        Write-VantaProcessExplorerDebugger -IfeoPath $path -State $absent
+        Write-VantaProcessExplorerDebugger -IfeoPath $path -State $absent
+        (Get-VantaProcessExplorerDebugger -IfeoPath $path).Exists | Should -BeFalse
+        (Get-ItemProperty -LiteralPath $path).Unrelated | Should -Be 7
+    }
+}
+
+Describe 'Process Explorer ownership state' {
+    It 'records only package identity and the pcw value Vanta changed' {
+        $state = ConvertTo-VantaProcessExplorerState -Architecture X64 `
+            -InstalledBinarySha256 ('a' * 64) -PcwStart 2 `
+            -DisablePcw $true -ExistingState $null
+
+        $state.SchemaVersion | Should -Be 1
+        $state.PackageVersion | Should -Be '17.13'
+        $state.PcwChanged | Should -BeTrue
+        $state.PcwPriorStart | Should -Be 2
+        @($state.PSObject.Properties.Name) | Should -Be @(
+            'SchemaVersion', 'PackageVersion', 'Architecture',
+            'InstalledBinarySha256', 'PcwChanged', 'PcwPriorStart'
+        )
+    }
+
+    It 'preserves the original pcw value across reinstall' {
+        $existing = [pscustomobject]@{ PcwChanged = $true; PcwPriorStart = 3 }
+        $state = ConvertTo-VantaProcessExplorerState -Architecture X64 `
+            -InstalledBinarySha256 ('b' * 64) -PcwStart 4 `
+            -DisablePcw $true -ExistingState $existing
+
+        $state.PcwChanged | Should -BeTrue
+        $state.PcwPriorStart | Should -Be 3
+    }
+
+    It 'round-trips the size-limited JSON record' {
+        $statePath = Join-Path $TestDrive 'ProcessExplorer\Vanta.ProcessExplorer.State.json'
+        $state = ConvertTo-VantaProcessExplorerState -Architecture ARM64 `
+            -InstalledBinarySha256 ('c' * 64) -PcwStart 4 `
+            -DisablePcw $false -ExistingState $null
+
+        Write-VantaProcessExplorerState -StatePath $statePath -State $state
+        $actual = Read-VantaProcessExplorerState -StatePath $statePath
+
+        $actual.Architecture | Should -Be 'ARM64'
+        $actual.InstalledBinarySha256 | Should -Be ('c' * 64)
+        $actual.PcwChanged | Should -BeFalse
+        $actual.PcwPriorStart | Should -BeNullOrEmpty
+        @(Get-ChildItem (Split-Path -Parent $statePath) -Force).Count | Should -Be 1
+    }
+
+    It 'rejects state that claims pcw ownership without a prior value' {
+        $statePath = Join-Path $TestDrive 'invalid.json'
+        [IO.File]::WriteAllText($statePath, @'
+{"SchemaVersion":1,"PackageVersion":"17.13","Architecture":"X64","InstalledBinarySha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","PcwChanged":true,"PcwPriorStart":null}
+'@)
+
+        { Read-VantaProcessExplorerState -StatePath $statePath } |
+            Should -Throw '*pcw ownership state is invalid*'
+    }
+}
+
+Describe 'Process Explorer file publication' {
+    It 'publishes checked bytes without leaving transaction artifacts' {
+        $source = Join-Path $TestDrive 'source.exe'
+        $destination = Join-Path $TestDrive 'package\procexp.exe'
+        [IO.File]::WriteAllText($source, 'reviewed-binary')
+        [void](New-Item (Split-Path -Parent $destination) -ItemType Directory -Force)
+        [IO.File]::WriteAllText($destination, 'old-binary')
+        $hash = Get-VantaProcessExplorerFileSha256 -Path $source
+
+        Copy-VantaProcessExplorerFile -Source $source -Destination $destination `
+            -ExpectedSha256 $hash
+
+        [IO.File]::ReadAllText($destination) | Should -Be 'reviewed-binary'
+        @(Get-ChildItem (Split-Path -Parent $destination) -Filter '*.new-*').Count |
+            Should -Be 0
+    }
+
+    It 'leaves the working binary untouched when copied bytes fail validation' {
+        $source = Join-Path $TestDrive 'bad-source.exe'
+        $destination = Join-Path $TestDrive 'existing\procexp.exe'
+        [void](New-Item (Split-Path -Parent $destination) -ItemType Directory -Force)
+        [IO.File]::WriteAllText($source, 'unexpected')
+        [IO.File]::WriteAllText($destination, 'working')
+
+        { Copy-VantaProcessExplorerFile -Source $source -Destination $destination `
+                -ExpectedSha256 ('0' * 64) } | Should -Throw '*failed its SHA-256 check*'
+        [IO.File]::ReadAllText($destination) | Should -Be 'working'
+    }
+}
+
+Describe 'Process Explorer integration ownership' {
+    BeforeEach {
+        $script:Layout = [pscustomobject]@{
+            WindowsPath = 'C:\Windows'
+            PackagePath = Join-Path $TestDrive 'ProcessExplorer'
+            BinaryPath = Join-Path $TestDrive 'ProcessExplorer\procexp.exe'
+            StatePath = Join-Path $TestDrive 'ProcessExplorer\Vanta.ProcessExplorer.State.json'
+            ShortcutPath = Join-Path $TestDrive 'Process Explorer.lnk'
+            IfeoPath = 'HKLM:\Test\taskmgr.exe'
+            PcwPath = 'HKLM:\Test\pcw'
+        }
+        Remove-Item -LiteralPath $script:Layout.PackagePath -Recurse -Force `
+            -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $script:Layout.ShortcutPath -Force `
+            -ErrorAction SilentlyContinue
+    }
+
+    It 'refuses a foreign Task Manager debugger before mutation' {
+        $debugger = [pscustomobject]@{
+            Exists = $true
+            Value = 'C:\Other\task-manager.exe'
+            Kind = 'String'
+        }
+
+        { Assert-VantaProcessExplorerInstallOwnership -Layout $Layout `
+                -ExistingState $null -Debugger $debugger -ShortcutTarget $null `
+                -PcwStart 3 -ExpectedBinarySha256 ('0' * 64) } |
+            Should -Throw '*will not replace another Task Manager Debugger*'
+    }
+
+    It 'refuses to replace a foreign common Start menu shortcut' {
+        [IO.File]::WriteAllText($Layout.ShortcutPath, 'foreign-link')
+        $debugger = [pscustomobject]@{ Exists = $false; Value = $null; Kind = $null }
+
+        { Assert-VantaProcessExplorerInstallOwnership -Layout $Layout `
+                -ExistingState $null -Debugger $debugger `
+                -ShortcutTarget 'C:\Other\tool.exe' -PcwStart 3 `
+                -ExpectedBinarySha256 ('0' * 64) } |
+            Should -Throw '*will not replace the existing Start menu shortcut*'
+    }
+
+    It 'accepts the exact new pin when state refresh was interrupted' {
+        [void](New-Item $Layout.PackagePath -ItemType Directory -Force)
+        [IO.File]::WriteAllText($Layout.BinaryPath, 'new-reviewed-binary')
+        $newHash = Get-VantaProcessExplorerFileSha256 -Path $Layout.BinaryPath
+        $existing = [pscustomobject]@{
+            PcwChanged = $false
+            PcwPriorStart = $null
+            InstalledBinarySha256 = ('1' * 64)
+        }
+        $debugger = [pscustomobject]@{ Exists = $false; Value = $null; Kind = $null }
+
+        {
+            Assert-VantaProcessExplorerInstallOwnership -Layout $Layout `
+                -ExistingState $existing -Debugger $debugger -ShortcutTarget $null `
+                -PcwStart 3 -ExpectedBinarySha256 $newHash
+        } | Should -Not -Throw
+    }
+
+    It 'removes only exact Vanta integrations and restores owned pcw state' {
+        [IO.File]::WriteAllText($Layout.ShortcutPath, 'vanta-link')
+        $state = [pscustomobject]@{ PcwChanged = $true; PcwPriorStart = 2 }
+        Mock Get-VantaProcessExplorerDebugger {
+            [pscustomobject]@{ Exists = $true; Value = $script:Layout.BinaryPath; Kind = 'String' }
+        }
+        Mock Write-VantaProcessExplorerDebugger {}
+        Mock Get-VantaProcessExplorerShortcutTarget { $script:Layout.BinaryPath }
+        Mock Get-VantaProcessExplorerPcwStart { 4 }
+        Mock Invoke-VantaProcessExplorerPcwStartUpdate {}
+
+        Restore-VantaProcessExplorerIntegration -Layout $Layout -State $state
+
+        [IO.File]::Exists($Layout.ShortcutPath) | Should -BeFalse
+        Should -Invoke Write-VantaProcessExplorerDebugger -Times 1 -Exactly
+        Should -Invoke Invoke-VantaProcessExplorerPcwStartUpdate -Times 1 -Exactly `
+            -ParameterFilter { $Start -eq 2 }
+    }
+
+    It 'leaves newer foreign integration values untouched' {
+        [IO.File]::WriteAllText($Layout.ShortcutPath, 'custom-link')
+        $state = [pscustomobject]@{ PcwChanged = $true; PcwPriorStart = 2 }
+        Mock Get-VantaProcessExplorerDebugger {
+            [pscustomobject]@{ Exists = $true; Value = 'C:\Other\tool.exe'; Kind = 'String' }
+        }
+        Mock Write-VantaProcessExplorerDebugger {}
+        Mock Get-VantaProcessExplorerShortcutTarget { 'C:\Other\tool.exe' }
+        Mock Get-VantaProcessExplorerPcwStart { 3 }
+        Mock Invoke-VantaProcessExplorerPcwStartUpdate {}
+
+        Restore-VantaProcessExplorerIntegration -Layout $Layout -State $state
+
+        [IO.File]::Exists($Layout.ShortcutPath) | Should -BeTrue
+        Should -Invoke Write-VantaProcessExplorerDebugger -Times 0 -Exactly
+        Should -Invoke Invoke-VantaProcessExplorerPcwStartUpdate -Times 0 -Exactly
+    }
+
+    It 'retains the package when dependent restoration fails' {
+        [void](New-Item $Layout.PackagePath -ItemType Directory -Force)
+        [IO.File]::WriteAllText($Layout.BinaryPath, 'working-package')
+        $hash = Get-VantaProcessExplorerFileSha256 -Path $Layout.BinaryPath
+        $state = ConvertTo-VantaProcessExplorerState -Architecture X64 `
+            -InstalledBinarySha256 $hash -PcwStart 3 `
+            -DisablePcw $false -ExistingState $null
+        Write-VantaProcessExplorerState -StatePath $Layout.StatePath -State $state
+        Mock Get-VantaProcessExplorerLayout { $script:Layout }
+        Mock Restore-VantaProcessExplorerIntegration { throw 'restore failed' }
+
+        { Uninstall-VantaProcessExplorerPackageCore } | Should -Throw '*restore failed*'
+        [IO.File]::Exists($Layout.BinaryPath) | Should -BeTrue
+        [IO.File]::Exists($Layout.StatePath) | Should -BeTrue
+    }
+}
+
+Describe 'Process Explorer toggle caller' {
+    BeforeAll {
+        $modulesRoot = Join-Path $script:RepoRoot 'package\Executables\VantaModules\Scripts\Modules'
+        Import-Module (Join-Path $modulesRoot 'Vanta.Core\Vanta.Core.psd1') -Force
+        Import-Module (Join-Path $modulesRoot 'Vanta.Toggles\Vanta.Toggles.psd1') -Force
+        $script:Definition = Get-VantaToggleDefinition -Name ProcessExplorer `
+            -TogglesRoot (Join-Path $script:RepoRoot 'package\Executables\VantaModules\Toggles')
+
+        # The companion dot-sources ProcessExplorer-Package.ps1 from $Toggle.OperationsPath;
+        # the fake records which package operation ran beside itself.
+        $script:OperationsPath = Join-Path $TestDrive 'ToggleOperations'
+        [void](New-Item $script:OperationsPath -ItemType Directory -Force)
+        $script:CallRecord = Join-Path $script:OperationsPath 'call.txt'
+        Set-Content -LiteralPath (Join-Path $script:OperationsPath 'ProcessExplorer-Package.ps1') `
+            -Encoding Ascii -Value @'
+function Install-VantaProcessExplorerPackage {
+    param([switch]$DisablePcw)
+    [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'call.txt'), "Install:$([bool]$DisablePcw)")
+}
+function Get-VantaProcessExplorerLayout {
+    [pscustomobject]@{ PcwPath = 'TestRegistry:\pcw' }
+}
+function Get-VantaProcessExplorerPcwStart { 0 }
+function Uninstall-VantaProcessExplorerPackage {
+    [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'call.txt'), 'Uninstall')
+}
+function Write-VantaProcessExplorerUserPreference {
+    [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'call.txt'), 'UserPreference')
+}
+'@
+        $script:ToggleContext = [pscustomobject]@{
+            Name              = 'ProcessExplorer'
+            State             = 'Enable'
+            StateValue        = 1
+            Silent            = $true
+            JustContext       = $false
+            NoExplorerRestart = $false
+            ResetServices     = $false
+            StateRoot         = 'HKCU:\Software\VantaRewriteTest\Services'
+            LauncherPath      = $null
+            WinDir            = $env:SystemRoot
+            VantaModulesPath  = $TestDrive
+            ScriptsPath       = (Join-Path $TestDrive 'Scripts')
+            ModulesPath       = (Join-Path $TestDrive 'Scripts\Modules')
+            OperationsPath    = $script:OperationsPath
+            WindowsBuild      = 26100
+        }
+
+        function Invoke-ProcessExplorerFunction {
+            param([Parameter(Mandatory = $true)][string]$FunctionName)
+
+            InModuleScope Vanta.Toggles {
+                Invoke-VantaToggleFunction -Definition $d -FunctionName $f -Toggle $t -Label 'test'
+            } -Parameters @{ d = $script:Definition; f = $FunctionName; t = $script:ToggleContext }
+        }
+    }
+
+    BeforeEach {
+        Mock Write-VantaLog -ModuleName Vanta.Toggles
+        Remove-Item -LiteralPath $script:CallRecord -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'records Enable as state 1' {
+        $script:Definition.States['Enable']['StateValue'] | Should -Be 1 `
+            -Because 'Stop-ProcessExplorerUpgrade.ps1 preserves and rewrites state 1'
+    }
+
+    It 'does not invent consent to disable pcw during silent replay' {
+        Invoke-ProcessExplorerFunction -FunctionName $script:Definition.States['Enable']['MachineAction']
+        Get-Content -LiteralPath $script:CallRecord | Should -Be 'Install:False'
+    }
+
+    It 'runs the <Action> of <State> through its package operation' -TestCases @(
+        @{ State = 'Enable'; Action = 'UserAction'; Operation = 'UserPreference' }
+        @{ State = 'Disable'; Action = 'MachineAction'; Operation = 'Uninstall' }
+    ) {
+        Invoke-ProcessExplorerFunction -FunctionName $script:Definition.States[$State][$Action]
+        Get-Content -LiteralPath $script:CallRecord | Should -Be $Operation
+    }
+
+    It 'installs interactively without offering to disable a boot driver' {
+        Mock Read-VantaYesNo -ModuleName Vanta.Toggles { throw 'No driver prompt expected.' }
+        $script:ToggleContext.Silent = $false
+        try {
+            Invoke-ProcessExplorerFunction -FunctionName $script:Definition.States['Enable']['MachineAction']
+            Get-Content -LiteralPath $script:CallRecord | Should -Be 'Install:False'
+            Should -Invoke Read-VantaYesNo -ModuleName Vanta.Toggles -Times 0 -Exactly
+        }
+        finally { $script:ToggleContext.Silent = $true }
+    }
+}
+
+Describe 'Process Explorer upgrade teardown' {
+    BeforeEach {
+        # The script dot-sources the Vanta bootstrap, which replaces PSModulePath for the
+        # whole process.
+        $script:SavedModulePath = $env:PSModulePath
+        $script:UpgradeStateValue = 1
+        $script:UpgradeStatePath = 'HKLM:\SOFTWARE\Vanta\Services\ProcessExplorer'
+        $script:UpgradeUninstallPath = Join-Path `
+            ([Environment]::GetFolderPath('Windows')) `
+            'VantaDesktop\6. Advanced Configuration\Process Explorer\Uninstall Process Explorer.cmd'
+        $script:FakeUpgradeProcess = [pscustomobject]@{ ExitCode = 0 }
+        $script:FakeUpgradeProcess | Add-Member -MemberType ScriptMethod `
+            -Name WaitForExit -Value { return $true }
+
+        Mock Test-Path {
+            return $LiteralPath -in @($script:UpgradeStatePath, $script:UpgradeUninstallPath)
+        }
+        Mock Get-Item {
+            $key = [pscustomobject]@{ StateValue = $script:UpgradeStateValue }
+            $key | Add-Member -MemberType ScriptMethod -Name GetValueNames `
+                -Value { return @('state') }
+            $key | Add-Member -MemberType ScriptMethod -Name GetValueKind `
+                -Value { return [Microsoft.Win32.RegistryValueKind]::DWord }
+            $key | Add-Member -MemberType ScriptMethod -Name GetValue `
+                -Value { return $this.StateValue }
+            return $key
+        } -ParameterFilter { $LiteralPath -eq $script:UpgradeStatePath }
+        Mock Start-Process { return $script:FakeUpgradeProcess }
+        Mock Get-Process { return @() }
+        Mock Get-ItemProperty { return $null }
+        Mock New-ItemProperty {}
+        Mock New-Item {}
+    }
+
+    AfterEach {
+        $env:PSModulePath = $script:SavedModulePath
+    }
+
+    It 'uses the fixed staged cleanup helper instead of the installed desktop launcher and keeps the enabled choice' {
+        . $script:UpgradeStopPath
+        Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter {
+            $FilePath -like '*WindowsPowerShell*v1.0*powershell.exe' -and
+            ($ArgumentList -join ' ') -like '*Invoke-VantaProcessExplorerCleanup.ps1*' -and
+            $ArgumentList -contains '-NonInteractive'
+        }
+        Should -Invoke Start-Process -Times 0 -Exactly -ParameterFilter { $FilePath -like '*.cmd' }
+        Should -Invoke New-ItemProperty -Times 1 -Exactly -ParameterFilter {
+            $LiteralPath -eq $script:UpgradeStatePath -and
+            $Name -eq 'state' -and $PropertyType -eq 'DWord' -and $Value -eq 1
+        }
+    }
+
+    It 'blocks file removal after cleanup failure and retains the enabled choice' {
+        $script:FakeUpgradeProcess.ExitCode = 7
+        { . $script:UpgradeStopPath } | Should -Throw '*cleanup failed with exit code 7*'
+        Should -Invoke New-ItemProperty -Times 1 -Exactly -ParameterFilter { $Name -eq 'state' -and $Value -eq 1 }
+        Should -Invoke Get-Process -Times 0 -Exactly -ParameterFilter { $Name -contains 'taskmgr' }
+    }
+
+    Context 'with Task Manager open' {
+        BeforeEach {
+            $script:TaskManager = [pscustomobject]@{ Id = 4242; Killed = 0; Exits = $true; KillError = $null }
+            $script:TaskManager | Add-Member -MemberType ScriptMethod -Name Kill -Value {
+                $this.Killed++
+                if ($null -ne $this.KillError) { throw $this.KillError }
+            }
+            $script:TaskManager | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { $this.Exits }
+            # Open for the first query only: the check after ending it finds none.
+            $script:TaskManagerQueries = 0
+            Mock Get-Process -ParameterFilter { $Name -contains 'taskmgr' } -MockWith {
+                $script:TaskManagerQueries++
+                if ($script:TaskManagerQueries -eq 1) { $script:TaskManager }
+            }
+        }
+
+        It 'ends a running Task Manager and waits for it to exit' {
+            . $script:UpgradeStopPath
+            $script:TaskManager.Killed | Should -Be 1
+        }
+
+        It 'tells the user to close Task Manager when it does not stop' {
+            $script:TaskManager.Exits = $false
+            $script:TaskManager.KillError = [ComponentModel.Win32Exception]::new(5, 'Access is denied.')
+            { . $script:UpgradeStopPath } |
+                Should -Throw "*process 4242*didn't stop within ten seconds: Access is denied. Close Task Manager, then try again.*"
+        }
+
+        It 'accepts a Task Manager that exits before it is ended' {
+            $script:TaskManager.KillError = [InvalidOperationException]::new('exited')
+            { . $script:UpgradeStopPath } | Should -Not -Throw
+        }
+    }
+}

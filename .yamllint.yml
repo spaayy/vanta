@@ -1,0 +1,14 @@
+# Relaxed profile: syntax errors, duplicate keys and CRLF line endings fail the check,
+# while formatting rules only warn.
+extends: relaxed
+
+rules:
+  empty-lines: disable
+  line-length: disable
+  new-line-at-end-of-file: disable
+  trailing-spaces: disable
+  new-lines:
+    # The repository contract is LF on every platform (see .gitattributes/.editorconfig).
+    # `platform` resolves to CRLF on the Windows CI runner and rejects every tracked YAML
+    # file even though Git has checked it out exactly as configured.
+    type: unix

@@ -1,0 +1,642 @@
+//! App preferences, stored beside the downloaded Atlas packages under
+//! `%LOCALAPPDATA%\Vanta\App`.
+
+use std::os::windows::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result};
+use futures::channel::oneshot;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThemePreference {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+/// Which language the app speaks: the Windows display language (the
+/// default) or one the user chose. Stored as `"system"` or a BCP 47 tag; a
+/// missing or empty value is System, and a tag this build doesn't include
+/// is kept.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum LanguagePreference {
+    #[default]
+    System,
+    Explicit(String),
+}
+
+impl From<String> for LanguagePreference {
+    fn from(value: String) -> Self {
+        let trimmed = value.trim();
+        if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("system") {
+            LanguagePreference::System
+        } else {
+            LanguagePreference::Explicit(trimmed.to_owned())
+        }
+    }
+}
+
+impl From<LanguagePreference> for String {
+    fn from(value: LanguagePreference) -> Self {
+        match value {
+            LanguagePreference::System => "system".to_owned(),
+            LanguagePreference::Explicit(tag) => tag,
+        }
+    }
+}
+
+/// An install flow in progress. Saved before the app relaunches elevated so
+/// the new process can pick up exactly where the user was.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct InstallDraft {
+    /// When preparation asked for a restart (RFC 3339), saved before the
+    /// resume Run entry is registered.
+    pub preparation_restart_at: Option<String>,
+    /// "Get ready" finished preparing Windows with no restart owed, so a
+    /// resumed draft does not ask for it again.
+    pub preparation_ready: bool,
+    /// Step name as `Step::parse` understands it.
+    pub step: String,
+    pub options: Vec<String>,
+    /// An already unpacked package, if one was ready. Drafts from earlier
+    /// builds name it `playbookDir`.
+    #[serde(alias = "playbookDir")]
+    pub package_dir: Option<PathBuf>,
+    /// The Atlas package file (`.vantapkg`) it was unpacked from, downloaded
+    /// or opened, so ISO creation can offer it after a relaunch.
+    pub package_archive: Option<PathBuf>,
+    /// Which options screen was showing (see `AppModel::option_screens`).
+    pub option_screen: usize,
+    /// The id of the install this flow started, once it has. A completed
+    /// install clears the draft that launched it and no other.
+    pub session: Option<String>,
+    /// Which flow owns this draft: an id chosen by the window that began it.
+    /// Only the owner saves or abandons it; `None` means unowned, and any
+    /// window may adopt it.
+    pub flow: Option<String>,
+    /// The user chose to keep this Windows version where moving is optional.
+    pub windows_transition_declined: bool,
+    /// The user accepted Microsoft's licence terms for the Windows version
+    /// Atlas moves to.
+    pub windows_terms_accepted: bool,
+    /// The user went on past the warning that Windows here looks used.
+    pub used_windows_accepted: bool,
+    /// Your choices started from the installed Atlas's choices; the user's
+    /// changes since stand.
+    pub recorded_choices_applied: bool,
+    /// Whether the install keeps the installed Atlas's choices (`keep`) or
+    /// goes through them again (`choose-again`). Drafts from earlier builds
+    /// lack it, and keep them.
+    pub update_path: Option<String>,
+    /// What an earlier run in this flow did about Microsoft Store itself,
+    /// by the worker's id, so Get ready still says it after a restart.
+    pub store_outcome: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AppSettings {
+    pub drivers: Option<super::preparation::Drivers>,
+    pub theme: ThemePreference,
+    pub language: LanguagePreference,
+    /// Restart automatically when the install completes.
+    pub restart_after_install: bool,
+    pub usage_analytics: bool,
+    pub draft: Option<InstallDraft>,
+    /// Language tags whose "preview translation" notice the user dismissed.
+    pub dismissed_preview_notices: Vec<String>,
+    /// The `installedAt` of the recorded install whose Windows Security
+    /// reminder the user dismissed. A later install has its own reminder.
+    pub protection_reminder_dismissed: Option<String>,
+    /// The `installedAt` of the recorded install, kept with Microsoft
+    /// Defender, whose warning that Defender is missing the user dismissed.
+    pub defender_missing_dismissed: Option<String>,
+    /// The `installedAt` of the recorded install, kept with Microsoft
+    /// Defender, whose warning that Atlas's NoDefender package still removes
+    /// Defender the user dismissed.
+    pub defender_not_restored_dismissed: Option<String>,
+    /// A flow was left with Windows Security protection off, so the reminder
+    /// to turn it back on shows again after a relaunch.
+    pub protection_reminder_pending: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            drivers: None,
+            theme: ThemePreference::System,
+            language: LanguagePreference::System,
+            restart_after_install: true,
+            usage_analytics: true,
+            draft: None,
+            dismissed_preview_notices: Vec::new(),
+            protection_reminder_dismissed: None,
+            defender_missing_dismissed: None,
+            defender_not_restored_dismissed: None,
+            protection_reminder_pending: false,
+        }
+    }
+}
+
+/// Why the stored settings were not used. The raw error is kept as a
+/// diagnostic; the UI puts a translated explanation around it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SettingsProblem {
+    /// The file exists but could not be read.
+    Unreadable { error: String },
+    /// The file did not parse and was renamed aside.
+    DamagedKept { error: String, kept_as: String },
+    /// The file did not parse and is still where it was: it could not be
+    /// renamed aside, or it was only read (see [`read_from`]).
+    Damaged { error: String },
+}
+
+/// What `load` found: the settings to use and, if the stored file could not
+/// be read, why.
+#[derive(Clone, Debug, Default)]
+pub struct Loaded {
+    pub settings: AppSettings,
+    pub problem: Option<SettingsProblem>,
+}
+
+/// `%LOCALAPPDATA%\Vanta\App`. `VANTA_APP_DATA` overrides it for design
+/// review and testing, so a review run never touches the real app data.
+pub fn app_data_dir() -> PathBuf {
+    if let Some(path) = std::env::var_os("VANTA_APP_DATA") {
+        return PathBuf::from(path);
+    }
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Vanta")
+        .join("App")
+}
+
+/// Default folder for user-visible exported diagnostic ZIPs:
+/// `%LOCALAPPDATA%\Vanta\Diagnostics`.
+pub fn default_diagnostics_export_dir() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Vanta")
+        .join("Diagnostics")
+}
+
+/// Where this app keeps its own files: settings, downloads, unpacked
+/// packages and the install session. One value names them all, so the model
+/// (and its tests) can point everything at one directory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AppPaths {
+    pub root: PathBuf,
+}
+
+impl AppPaths {
+    /// The process's app data directory (see [`app_data_dir`]).
+    pub fn from_process() -> Self {
+        Self::under(app_data_dir())
+    }
+
+    pub fn under(root: impl Into<PathBuf>) -> Self {
+        Self { root: root.into() }
+    }
+
+    pub fn settings(&self) -> PathBuf {
+        self.root.join("settings.json")
+    }
+
+    /// Unpacked packages, one directory each.
+    pub fn packages(&self) -> PathBuf {
+        self.root.join("Packages")
+    }
+
+    /// Downloaded packages with their verification records.
+    pub fn downloads(&self) -> PathBuf {
+        self.root.join("Downloads")
+    }
+
+    pub fn session(&self) -> super::session::SessionPaths {
+        super::session::SessionPaths::under(&self.root)
+    }
+}
+
+/// Missing settings are the defaults. A damaged file (not UTF-8 or not valid
+/// JSON) is set aside as `settings.json.invalid` rather than silently
+/// replaced, and reported; one that can't be read at the moment is left alone
+/// and reported.
+pub fn load_from(path: &Path) -> Loaded {
+    let loaded = read_from(path);
+    let Some(SettingsProblem::Damaged { error }) = loaded.problem else { return loaded };
+    let aside = invalid_path(path);
+    let problem = if std::fs::rename(path, &aside).is_ok() {
+        SettingsProblem::DamagedKept {
+            error,
+            kept_as: aside.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+        }
+    } else {
+        SettingsProblem::Damaged { error }
+    };
+    Loaded { settings: AppSettings::default(), problem: Some(problem) }
+}
+
+/// Reads the settings as [`load_from`] does but changes nothing on disk: a
+/// damaged file is reported and left in place. For readers outside the
+/// window's model (startup recovery, diagnostics), so the model's own load
+/// still finds the damaged file, sets it aside and tells the user.
+pub fn read_from(path: &Path) -> Loaded {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Loaded::default(),
+        Err(error) => {
+            return Loaded {
+                settings: AppSettings::default(),
+                problem: Some(SettingsProblem::Unreadable { error: error.to_string() }),
+            };
+        }
+    };
+    // Content that isn't UTF-8 (a hand edit saved as UTF-16, say) won't read
+    // any better later, so it counts as damaged, not unreadable.
+    let parsed = std::str::from_utf8(&bytes).map_err(|error| error.to_string()).and_then(|text| {
+        serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|error| error.to_string())
+    });
+    match parsed {
+        Ok(settings) => Loaded { settings, problem: None },
+        Err(error) => {
+            Loaded { settings: AppSettings::default(), problem: Some(SettingsProblem::Damaged { error }) }
+        }
+    }
+}
+
+fn invalid_path(path: &Path) -> PathBuf {
+    let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    name.push(".invalid");
+    path.with_file_name(name)
+}
+
+/// How long a settings write waits for another writer's lock before failing.
+pub const LOCK_WAIT: Duration = Duration::from_secs(2);
+
+/// A locked read-modify-write of the settings file: `change` sees what is on
+/// disk now, never a cached copy, and its answer is returned. A missing file
+/// starts from the defaults, a damaged one is set aside as [`load_from`]
+/// does, and an unreadable one fails without writing. Another writer's
+/// lock is waited for up to `wait`.
+pub fn modify<R>(path: &Path, wait: Duration, change: impl FnOnce(&mut AppSettings) -> R) -> Result<R> {
+    let _lock = SettingsLock::acquire(path, wait)?;
+    let loaded = load_from(path);
+    if let Some(SettingsProblem::Unreadable { error }) = &loaded.problem {
+        anyhow::bail!("{} cannot be read at the moment ({error}); nothing was changed", path.display());
+    }
+    let mut settings = loaded.settings;
+    let answer = change(&mut settings);
+    save_to(path, &settings)?;
+    Ok(answer)
+}
+
+/// A short-lived lock on the settings file that every instance of the app
+/// takes: a lock file opened with no sharing. Only contention is waited
+/// out; any other failure to open the lock file is an error at once.
+struct SettingsLock {
+    _file: std::fs::File,
+}
+
+impl SettingsLock {
+    fn acquire(path: &Path, wait: Duration) -> Result<Self> {
+        const RETRY: Duration = Duration::from_millis(20);
+        const ERROR_SHARING_VIOLATION: i32 = 32;
+        let lock_path = path.with_extension("json.lock");
+        if let Some(parent) = lock_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let deadline = Instant::now() + wait;
+        loop {
+            let mut options = std::fs::OpenOptions::new();
+            options.read(true).write(true).create(true).truncate(false).share_mode(0);
+            match options.open(&lock_path) {
+                Ok(file) => return Ok(Self { _file: file }),
+                Err(error)
+                    if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION) && Instant::now() < deadline =>
+                {
+                    std::thread::sleep(RETRY);
+                }
+                Err(error) => {
+                    return Err(error).with_context(|| format!("lock {}", lock_path.display()));
+                }
+            }
+        }
+    }
+}
+
+/// A fresh flow id: the process id and a nanosecond stamp.
+pub fn new_flow_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    format!("{}-{nanos:x}", std::process::id())
+}
+
+/// The one way the app writes settings: [`modify`] transactions run in order
+/// on their own thread, so the window's thread never waits for the lock and
+/// no writer saves a stale copy. Each caller gets its answer once it is
+/// written.
+#[derive(Clone)]
+pub struct Store {
+    jobs: mpsc::Sender<Job>,
+}
+
+type Job = Box<dyn FnOnce(&Path, Duration) + Send>;
+
+impl Store {
+    /// A writer for the file at `path` that waits up to `lock_wait` for
+    /// another writer's lock.
+    pub fn new(path: PathBuf, lock_wait: Duration) -> Self {
+        let (jobs, queue) = mpsc::channel::<Job>();
+        std::thread::Builder::new()
+            .name("atlas-settings".into())
+            .spawn(move || {
+                for job in queue {
+                    job(&path, lock_wait);
+                }
+            })
+            .expect("start the settings thread");
+        Self { jobs }
+    }
+
+    /// Queues `change` at once. The future resolves with its answer once the
+    /// document has been written, or with the reason it was not.
+    pub fn transact<R, F>(&self, change: F) -> impl Future<Output = Result<R, String>> + use<R, F>
+    where
+        R: Send + 'static,
+        F: FnOnce(&mut AppSettings) -> R + Send + 'static,
+    {
+        let (done, answer) = oneshot::channel();
+        let job: Job = Box::new(move |path, wait| {
+            let result = modify(path, wait, change).map_err(|error| format!("{error:#}"));
+            let _ = done.send(result);
+        });
+        if self.jobs.send(job).is_err() {
+            log::error!("the settings thread is gone");
+        }
+        async move { answer.await.unwrap_or_else(|_| Err("the settings writer stopped".into())) }
+    }
+}
+
+/// Writes the whole document to a temporary file and renames it into place,
+/// so an interruption never leaves a half-written settings file.
+pub fn save_to(path: &Path, settings: &AppSettings) -> Result<()> {
+    super::files::write_json_atomically(path, settings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::test_support::TempDir;
+
+    #[test]
+    fn analytics_defaults_on_and_respects_a_saved_opt_out() {
+        let legacy: AppSettings = serde_json::from_str("{}").unwrap();
+        let opted_out: AppSettings = serde_json::from_str(r#"{"usageAnalytics":false}"#).unwrap();
+        assert!(AppSettings::default().usage_analytics);
+        assert!(legacy.usage_analytics);
+        assert!(!opted_out.usage_analytics);
+    }
+
+    #[test]
+    fn settings_round_trip_atomically() {
+        let temp = TempDir::new("settings-roundtrip");
+        let path = temp.path().join("nested").join("settings.json");
+        let settings = AppSettings {
+            dismissed_preview_notices: vec![],
+            protection_reminder_dismissed: Some("2026-09-30T20:06:21.9690173+00:00".into()),
+            defender_missing_dismissed: Some("2026-09-30T20:06:21.9690173+00:00".into()),
+            defender_not_restored_dismissed: Some("2026-09-30T20:06:21.9690173+00:00".into()),
+            protection_reminder_pending: true,
+            drivers: Some(super::super::preparation::Drivers::Manual),
+            theme: ThemePreference::Dark,
+            language: LanguagePreference::Explicit("de".into()),
+            usage_analytics: true,
+            restart_after_install: false,
+            draft: Some(InstallDraft {
+                step: "options".into(),
+                options: vec!["defender-enable".into()],
+                package_dir: Some(PathBuf::from(r"C:\Packages\0.6.0")),
+                package_archive: Some(PathBuf::from(r"C:\Downloads\Vanta.vantapkg")),
+                option_screen: 2,
+                session: Some("20260905-120000-1234-abc".into()),
+                flow: Some("flow-1".into()),
+                preparation_restart_at: None,
+                preparation_ready: true,
+                windows_transition_declined: true,
+                windows_terms_accepted: true,
+                used_windows_accepted: true,
+                recorded_choices_applied: true,
+                update_path: Some("choose-again".into()),
+                store_outcome: Some("store-repaired".into()),
+            }),
+        };
+        save_to(&path, &settings).unwrap();
+        let loaded = load_from(&path);
+        assert_eq!(loaded.settings, settings);
+        assert!(loaded.problem.is_none());
+        let names: Vec<String> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["settings.json"], "no temporary file may remain");
+    }
+
+    #[test]
+    fn missing_settings_are_defaults_without_a_problem() {
+        let temp = TempDir::new("settings-missing");
+        let loaded = load_from(&temp.path().join("settings.json"));
+        assert_eq!(loaded.settings, AppSettings::default());
+        assert!(loaded.problem.is_none());
+    }
+
+    #[test]
+    fn a_damaged_file_is_kept_aside_and_reported() {
+        let temp = TempDir::new("settings-damaged");
+        let path = temp.path().join("settings.json");
+        std::fs::write(&path, "{ \"theme\": \"dark\", ").unwrap();
+        let loaded = load_from(&path);
+        assert_eq!(loaded.settings, AppSettings::default());
+        assert!(matches!(
+            &loaded.problem,
+            Some(SettingsProblem::DamagedKept { kept_as, .. }) if kept_as == "settings.json.invalid"
+        ));
+        assert!(!path.exists());
+        assert!(temp.path().join("settings.json.invalid").is_file());
+        // The next load is clean again.
+        assert!(load_from(&path).problem.is_none());
+    }
+
+    #[test]
+    fn reading_a_damaged_file_leaves_it_for_the_load_that_reports_it() {
+        let temp = TempDir::new("settings-damaged-read");
+        let path = temp.path().join("settings.json");
+        std::fs::write(&path, "{").unwrap();
+        let read = read_from(&path);
+        assert_eq!(read.settings, AppSettings::default());
+        assert!(matches!(read.problem, Some(SettingsProblem::Damaged { .. })));
+        assert!(path.is_file(), "the damaged file stays where it is");
+        assert!(!temp.path().join("settings.json.invalid").exists());
+        // The model's load still finds it, sets it aside and reports that.
+        assert!(matches!(load_from(&path).problem, Some(SettingsProblem::DamagedKept { .. })));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_file_that_is_not_utf8_is_damaged_rather_than_unreadable() {
+        let temp = TempDir::new("settings-utf16");
+        let path = temp.path().join("settings.json");
+        // `{}` as Windows PowerShell 5.1's `>` writes it: UTF-16 with a byte order mark.
+        let utf16 = b"\xff\xfe{\0}\0";
+        std::fs::write(&path, utf16).unwrap();
+        assert!(matches!(
+            load_from(&path).problem,
+            Some(SettingsProblem::DamagedKept { kept_as, .. }) if kept_as == "settings.json.invalid"
+        ));
+        // A write sets such a file aside too, rather than refusing.
+        std::fs::write(&path, utf16).unwrap();
+        modify(&path, LOCK_WAIT, |settings| settings.theme = ThemePreference::Dark).unwrap();
+        assert_eq!(load_from(&path).settings.theme, ThemePreference::Dark);
+    }
+
+    #[test]
+    fn older_settings_files_read_as_match_windows_and_unknown_tags_are_kept() {
+        let temp = TempDir::new("settings-language");
+        let path = temp.path().join("settings.json");
+        std::fs::write(&path, "{ \"theme\": \"dark\", \"restartAfterInstall\": true }").unwrap();
+        let loaded = load_from(&path);
+        assert_eq!(loaded.settings.language, LanguagePreference::System);
+        std::fs::write(&path, "{ \"language\": \"tlh\" }").unwrap();
+        assert_eq!(load_from(&path).settings.language, LanguagePreference::Explicit("tlh".into()));
+        std::fs::write(&path, "{ \"language\": \"System\" }").unwrap();
+        assert_eq!(load_from(&path).settings.language, LanguagePreference::System);
+        // Written back as a plain string.
+        save_to(
+            &path,
+            &AppSettings { language: LanguagePreference::Explicit("pl".into()), ..Default::default() },
+        )
+        .unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().contains("\"language\": \"pl\""));
+    }
+
+    #[test]
+    fn modify_edits_what_is_on_disk_not_a_stale_copy() {
+        let temp = TempDir::new("settings-modify");
+        let path = temp.path().join("settings.json");
+        let newer = InstallDraft { step: "options".into(), ..InstallDraft::default() };
+        save_to(
+            &path,
+            &AppSettings { draft: Some(newer.clone()), theme: ThemePreference::Dark, ..Default::default() },
+        )
+        .unwrap();
+        // A caller holding an older idea of the file clears the draft only if
+        // the one on disk is the one it means.
+        let cleared = modify(&path, LOCK_WAIT, |settings| {
+            if settings.draft.as_ref().is_some_and(|draft| draft.step == "install") {
+                settings.draft = None;
+                true
+            } else {
+                false
+            }
+        })
+        .unwrap();
+        assert!(!cleared, "the newer draft on disk is not this caller's to clear");
+        let on_disk = load_from(&path).settings;
+        assert_eq!(on_disk.draft, Some(newer.clone()));
+        assert_eq!(on_disk.theme, ThemePreference::Dark, "other settings on disk are kept");
+        modify(&path, LOCK_WAIT, |settings| settings.draft = None).unwrap();
+        assert!(load_from(&path).settings.draft.is_none());
+    }
+
+    /// A writer overlapping a locked transaction, and a stale whole-document
+    /// save: with every writer a transaction, both changes survive.
+    #[test]
+    fn concurrent_and_stale_writers_both_keep_the_other_ones_change() {
+        let temp = TempDir::new("settings-writers");
+        let path = temp.path().join("settings.json");
+        save_to(&path, &AppSettings::default()).unwrap();
+        let draft =
+            InstallDraft { step: "security".into(), flow: Some("b".into()), ..InstallDraft::default() };
+        // A slow transaction holds the lock while another store writes.
+        let a = Store::new(path.clone(), LOCK_WAIT);
+        let b = Store::new(path.clone(), LOCK_WAIT);
+        let slow = a.transact(|settings| {
+            std::thread::sleep(Duration::from_millis(300));
+            settings.theme = ThemePreference::Dark;
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        let other = {
+            let draft = draft.clone();
+            b.transact(move |settings| settings.draft = Some(draft))
+        };
+        futures::executor::block_on(slow).unwrap();
+        futures::executor::block_on(other).unwrap();
+        let on_disk = load_from(&path).settings;
+        assert_eq!(on_disk.theme, ThemePreference::Dark);
+        assert_eq!(on_disk.draft, Some(draft.clone()));
+        // A preference change from a store that never saw the draft.
+        futures::executor::block_on(a.transact(|settings| settings.restart_after_install = false)).unwrap();
+        let on_disk = load_from(&path).settings;
+        assert!(!on_disk.restart_after_install);
+        assert_eq!(on_disk.draft, Some(draft), "a field update never erases another window's draft");
+        // Transactions from one store apply in order.
+        drop(a.transact(|settings| settings.theme = ThemePreference::Light));
+        drop(a.transact(|settings| settings.theme = ThemePreference::Dark));
+        let last = a.transact(|settings| settings.theme = ThemePreference::System);
+        futures::executor::block_on(last).unwrap();
+        assert_eq!(load_from(&path).settings.theme, ThemePreference::System);
+    }
+
+    #[test]
+    fn a_document_that_cannot_be_read_is_not_replaced_with_defaults() {
+        const FILE_SHARE_WRITE: u32 = 0x2;
+        const FILE_SHARE_DELETE: u32 = 0x4;
+        let temp = TempDir::new("settings-unreadable");
+        let path = temp.path().join("settings.json");
+        let draft =
+            InstallDraft { step: "options".into(), flow: Some("x".into()), ..InstallDraft::default() };
+        save_to(
+            &path,
+            &AppSettings { draft: Some(draft.clone()), theme: ThemePreference::Dark, ..Default::default() },
+        )
+        .unwrap();
+        let before = std::fs::read(&path).unwrap();
+        // Readable by nobody else, yet replaceable: the atomic rename would succeed.
+        let holder = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+            .open(&path)
+            .unwrap();
+        assert!(matches!(load_from(&path).problem, Some(SettingsProblem::Unreadable { .. })));
+        let error = modify(&path, LOCK_WAIT, |settings| settings.draft = None).unwrap_err();
+        assert!(error.to_string().contains("nothing was changed"), "{error:#}");
+        drop(holder);
+        assert_eq!(std::fs::read(&path).unwrap(), before, "the document is untouched");
+        assert_eq!(load_from(&path).settings.draft, Some(draft));
+    }
+
+    /// A draft an earlier build saved names its unpacked package
+    /// `playbookDir`; it still resumes, and is saved again as `packageDir`.
+    #[test]
+    fn a_draft_from_an_earlier_build_keeps_its_package() {
+        let draft: InstallDraft = serde_json::from_value(
+            serde_json::json!({ "step": "options", "playbookDir": r"C:\P\0.6.0_abc" }),
+        )
+        .unwrap();
+        assert_eq!(draft.package_dir, Some(PathBuf::from(r"C:\P\0.6.0_abc")));
+        let saved = serde_json::to_value(&draft).unwrap();
+        assert_eq!(saved["packageDir"], r"C:\P\0.6.0_abc");
+        assert!(saved.get("playbookDir").is_none());
+    }
+}

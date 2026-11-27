@@ -1,0 +1,271 @@
+[
+  {
+    "name": "Vanta 0.5.0 with Defender kept and the default extras",
+    "packages": [
+      "Z-Vanta-NoTelemetry-Package~31bf3856ad364e35~amd64~~5.0.0.0"
+    ],
+    "facts": {
+      "toggles": [
+        {
+          "name": "Mitigations",
+          "state": 2
+        },
+        {
+          "name": "AutomaticUpdates",
+          "state": 0
+        },
+        {
+          "name": "Hibernation",
+          "state": 0
+        },
+        {
+          "name": "PowerSaving",
+          "state": 0
+        },
+        {
+          "name": "FileSharing",
+          "state": 0
+        }
+      ],
+      "browser": "Brave",
+      "edge": false,
+      "appx": [
+        "Microsoft.WindowsCalculator_8wekyb3d8bbwe",
+        "Microsoft.Paint_8wekyb3d8bbwe"
+      ],
+      "toolbox": true,
+      "coreIsolationOff": true,
+      "browsers": [
+        "browser-brave"
+      ],
+      "languageHotkey": "3",
+      "keyboardLayouts": 2
+    },
+    "options": [
+      "defender-enable",
+      "mitigations-default",
+      "auto-updates-disable",
+      "disable-hibernation",
+      "disable-power-saving",
+      "uninstall-edge",
+      "remove-snipping-tool",
+      "disable-core-isolation",
+      "install-another-browser",
+      "browser-brave",
+      "keyboard-selector"
+    ]
+  },
+  {
+    "name": "Defender removed, mitigations off, automatic updates on, no extras",
+    "packages": [
+      "Z-Vanta-NoDefender-Package~31bf3856ad364e35~amd64~~5.0.0.0",
+      "Z-Vanta-NoTelemetry-Package~31bf3856ad364e35~amd64~~5.0.0.0"
+    ],
+    "facts": {
+      "toggles": [
+        {
+          "name": "Mitigations",
+          "state": 0
+        },
+        {
+          "name": "AutomaticUpdates",
+          "state": 1
+        },
+        {
+          "name": "Hibernation",
+          "state": 1
+        },
+        {
+          "name": "PowerSaving",
+          "state": 1
+        }
+      ],
+      "browser": null,
+      "edge": true,
+      "appx": [
+        "Microsoft.ScreenSketch_8wekyb3d8bbwe"
+      ],
+      "toolbox": false,
+      "coreIsolationOff": false,
+      "browsers": [
+        "browser-firefox"
+      ],
+      "languageHotkey": "3",
+      "keyboardLayouts": 1
+    },
+    "options": [
+      "defender-disable",
+      "mitigations-disable",
+      "auto-updates-default",
+      "keyboard-single"
+    ]
+  },
+  {
+    "name": "LibreWolf, which Vanta 0.5.0 records as an empty name",
+    "packages": [],
+    "facts": {
+      "toggles": [],
+      "browser": "",
+      "edge": true,
+      "appx": [],
+      "toolbox": false,
+      "coreIsolationOff": false,
+      "browsers": [
+        "browser-librewolf"
+      ],
+      "languageHotkey": "1",
+      "keyboardLayouts": 2
+    },
+    "options": [
+      "install-another-browser",
+      "browser-librewolf",
+      "keyboard-shortcuts"
+    ]
+  },
+  {
+    "name": "An empty browser name with two browsers installed names none",
+    "packages": [],
+    "facts": {
+      "toggles": [],
+      "browser": "",
+      "edge": true,
+      "appx": [],
+      "toolbox": false,
+      "coreIsolationOff": false,
+      "browsers": [
+        "browser-librewolf",
+        "browser-firefox"
+      ]
+    },
+    "options": []
+  },
+  {
+    "name": "Vanta 0.6 with keyboard shortcuts off, which its record shows whatever Alt+Shift is",
+    "packages": [
+      "Z-Vanta-NoTelemetry-Package~31bf3856ad364e35~amd64~~5.0.0.0"
+    ],
+    "facts": {
+      "toggles": [
+        {
+          "name": "Mitigations",
+          "state": 1
+        },
+        {
+          "name": "AutomaticUpdates",
+          "state": 0
+        },
+        {
+          "name": "KeyboardShortcuts",
+          "state": 0
+        }
+      ],
+      "browser": "",
+      "edge": false,
+      "appx": [
+        "Microsoft.WindowsCalculator_8wekyb3d8bbwe",
+        "Microsoft.Paint_8wekyb3d8bbwe"
+      ],
+      "toolbox": false,
+      "coreIsolationOff": false,
+      "browsers": [],
+      "languageHotkey": "1",
+      "keyboardLayouts": 2,
+      "defender": true
+    },
+    "options": [
+      "defender-enable",
+      "mitigations-default",
+      "auto-updates-disable",
+      "uninstall-edge",
+      "remove-snipping-tool",
+      "keyboard-selector"
+    ]
+  },
+  {
+    "name": "Vanta 0.6 with keyboard shortcuts on, which its record shows whatever Alt+Shift is",
+    "packages": [
+      "Z-Vanta-NoDefender-Package~31bf3856ad364e35~amd64~~5.0.0.0",
+      "Z-Vanta-NoTelemetry-Package~31bf3856ad364e35~amd64~~5.0.0.0"
+    ],
+    "facts": {
+      "toggles": [
+        {
+          "name": "Mitigations",
+          "state": 0
+        },
+        {
+          "name": "AutomaticUpdates",
+          "state": 1
+        },
+        {
+          "name": "Hibernation",
+          "state": 0
+        },
+        {
+          "name": "PowerSaving",
+          "state": 0
+        },
+        {
+          "name": "KeyboardShortcuts",
+          "state": 1
+        }
+      ],
+      "browser": "Firefox",
+      "edge": true,
+      "appx": [
+        "Microsoft.ScreenSketch_8wekyb3d8bbwe"
+      ],
+      "toolbox": true,
+      "coreIsolationOff": true,
+      "browsers": [
+        "browser-firefox"
+      ],
+      "languageHotkey": "3",
+      "keyboardLayouts": 1,
+      "defender": false
+    },
+    "options": [
+      "defender-disable",
+      "mitigations-disable",
+      "auto-updates-default",
+      "disable-hibernation",
+      "disable-power-saving",
+      "disable-core-isolation",
+      "install-another-browser",
+      "browser-firefox",
+      "keyboard-shortcuts"
+    ]
+  },
+  {
+    "name": "Microsoft Defender there without an Vanta package",
+    "packages": [],
+    "facts": {
+      "toggles": [],
+      "browser": null,
+      "edge": true,
+      "appx": [],
+      "toolbox": false,
+      "coreIsolationOff": false,
+      "browsers": [],
+      "defender": true
+    },
+    "options": [
+      "defender-enable"
+    ]
+  },
+  {
+    "name": "Microsoft Defender missing without an Vanta package, which shows no choice",
+    "packages": [],
+    "facts": {
+      "toggles": [],
+      "browser": null,
+      "edge": true,
+      "appx": [],
+      "toolbox": false,
+      "coreIsolationOff": false,
+      "browsers": [],
+      "defender": false
+    },
+    "options": []
+  }
+]

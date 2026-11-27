@@ -1,0 +1,327 @@
+name: Build Vanta package
+
+# Actions are pinned by SHA; Dependabot updates the SHA and its version comment together.
+
+on:
+  push:
+    paths:
+      - "package/**"
+      - "tools/**"
+      - ".github/requirements-ci.txt"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch or ref to build without publishing"
+        required: true
+        default: "main"
+        type: string
+
+# This workflow executes repository code and downloaded build dependencies. It may read the
+# checkout and upload review artifacts, but it must never receive a repository-write token.
+permissions:
+  contents: read
+
+concurrency:
+  group: build-package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SXSC_REPO: "https://github.com/Atlas-OS/sxsc"
+  SXSC_REF: "a351a94f0feeab200032a41d7577bd150b0c05e2"
+
+jobs:
+  build:
+    name: Build the Vanta package
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref }}
+
+      - name: Bind the artifact to the checked-out commit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sourceSha = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sourceSha -cnotmatch '^[0-9a-f]{40}$') {
+              throw 'The checked-out source commit could not be resolved exactly.'
+          }
+          "VANTA_SOURCE_SHA=$sourceSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Set up pinned Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install hash-locked Python dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check --no-input `
+              --only-binary=:all: --require-hashes -r .github/requirements-ci.txt
+          if ($LASTEXITCODE -ne 0) {
+              throw 'Installing the hash-locked CI dependencies failed.'
+          }
+
+      - name: Select SxS configs
+        id: sxsc-configs
+        shell: pwsh
+        env:
+          VANTA_EVENT_BEFORE: ${{ github.event.before }}
+          VANTA_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          $sxscRoot = [IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE 'tools\sxsc'))
+          $configStage = Join-Path $env:RUNNER_TEMP 'vanta-sxsc-configs'
+          New-Item -Path $configStage -ItemType Directory -Force | Out-Null
+
+          $regenerateAll = $env:VANTA_EVENT_NAME -eq 'workflow_dispatch' -or
+              (Test-Path -LiteralPath (Join-Path $sxscRoot 'regenAllConfigs') -PathType Leaf) -or
+              $env:VANTA_EVENT_BEFORE -notmatch '^[0-9a-f]{40}$' -or
+              $env:VANTA_EVENT_BEFORE -eq ('0' * 40)
+
+          # A force push can leave the previous tip outside the fetched history.
+          # Rebuild all configs when that comparison base is unavailable.
+          if (-not $regenerateAll) {
+              & git cat-file -e "$($env:VANTA_EVENT_BEFORE)^{commit}" 2>$null
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Host 'Previous push commit is unavailable; regenerating all SxS configs.'
+                  $regenerateAll = $true
+                  # The runner exits with the last native exit code, and no later
+                  # native call on this path replaces the handled failure.
+                  $global:LASTEXITCODE = 0
+              }
+          }
+
+          if (-not $regenerateAll) {
+              $deletedFiles = @(& git diff --name-only --diff-filter=D `
+                  $env:VANTA_EVENT_BEFORE $env:VANTA_SOURCE_SHA -- 'tools/sxsc/*.yaml')
+              if ($LASTEXITCODE -ne 0) {
+                  throw 'Determining deleted SxS configuration files failed.'
+              }
+              $regenerateAll = $deletedFiles.Count -gt 0
+          }
+
+          if ($regenerateAll) {
+              $changedFiles = @(Get-ChildItem -LiteralPath $sxscRoot -Filter '*.yaml' -File |
+                  Select-Object -ExpandProperty FullName)
+          } else {
+              $changedFiles = @(& git diff --name-only --diff-filter=ACMR `
+                  $env:VANTA_EVENT_BEFORE $env:VANTA_SOURCE_SHA -- 'tools/sxsc/*.yaml')
+              if ($LASTEXITCODE -ne 0) {
+                  throw 'Determining changed SxS configuration files failed.'
+              }
+              $changedFiles = @($changedFiles | ForEach-Object {
+                      [IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE $_))
+                  })
+          }
+
+          $rootPrefix = $sxscRoot.TrimEnd([char]'\', [char]'/') +
+              [IO.Path]::DirectorySeparatorChar
+          foreach ($file in $changedFiles) {
+              $fullPath = [IO.Path]::GetFullPath([string]$file)
+              if (-not $fullPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+                  [IO.Path]::GetExtension($fullPath) -cne '.yaml' -or
+                  -not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+                  throw "Refusing an invalid SxS config path: '$file'."
+              }
+              Copy-Item -LiteralPath $fullPath -Destination $configStage -Force
+          }
+
+          $runSxsc = $changedFiles.Count -gt 0
+          "run-sxsc=$($runSxsc.ToString().ToLowerInvariant())" |
+              Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "VANTA_SXSC_CONFIG_STAGE=$configStage" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VANTA_REGENERATE_ALL=$($regenerateAll.ToString().ToLowerInvariant())" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          if (-not $runSxsc) {
+              Write-Host 'No SxS configuration changes were selected.'
+          }
+
+      - name: Fetch the pinned SxS compiler
+        if: steps.sxsc-configs.outputs.run-sxsc == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sxsc = Join-Path $env:RUNNER_TEMP 'vanta-sxsc'
+          New-Item -Path $sxsc -ItemType Directory -Force | Out-Null
+
+          & git -C $sxsc init --quiet
+          if ($LASTEXITCODE -ne 0) { throw 'Initializing the SxS source directory failed.' }
+          & git -C $sxsc remote add origin $env:SXSC_REPO
+          if ($LASTEXITCODE -ne 0) { throw 'Binding the SxS source repository failed.' }
+          & git -C $sxsc fetch --depth=1 origin $env:SXSC_REF
+          if ($LASTEXITCODE -ne 0) { throw 'Fetching the pinned SxS source failed.' }
+          & git -C $sxsc checkout --detach --quiet FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Checking out the pinned SxS source failed.' }
+
+          $actualRef = (& git -C $sxsc rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualRef -cne $env:SXSC_REF) {
+              throw "SxS source identity mismatch: expected '$env:SXSC_REF', got '$actualRef'."
+          }
+
+          # Create an exact flat compiler input set. Copying the stage directory itself
+          # would nest it and make the later non-recursive compiler loop see no files.
+          $configDestination = Join-Path $sxsc 'configs'
+          if (Test-Path -LiteralPath $configDestination) {
+              Get-ChildItem -LiteralPath $configDestination -Force -ErrorAction Stop |
+                  Remove-Item -Recurse -Force -ErrorAction Stop
+          }
+          else {
+              New-Item -Path $configDestination -ItemType Directory `
+                  -ErrorAction Stop | Out-Null
+          }
+          $selectedConfigs = @(Get-ChildItem `
+                  -LiteralPath $env:VANTA_SXSC_CONFIG_STAGE `
+                  -Filter '*.yaml' -File -ErrorAction Stop)
+          if ($selectedConfigs.Count -eq 0) {
+              throw 'The selected SxS configuration stage is empty.'
+          }
+          $selectedConfigs | Copy-Item -Destination $configDestination `
+              -Force -ErrorAction Stop
+          $copiedConfigs = @(Get-ChildItem -LiteralPath $configDestination `
+                  -Filter '*.yaml' -File -ErrorAction Stop)
+          if ($copiedConfigs.Count -ne $selectedConfigs.Count) {
+              throw 'The SxS compiler input directory does not match the selected config set.'
+          }
+          "VANTA_SXSC_ROOT=$sxsc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build CAB candidates
+        if: steps.sxsc-configs.outputs.run-sxsc == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sxsc = $env:VANTA_SXSC_ROOT
+          $packagePath = Join-Path $env:GITHUB_WORKSPACE `
+              'package\Executables\VantaModules\Packages'
+          New-Item -Path $packagePath -ItemType Directory -Force | Out-Null
+          if ($env:VANTA_REGENERATE_ALL -eq 'true') {
+              Get-ChildItem -LiteralPath $packagePath -Filter '*.cab' -File |
+                  Remove-Item -Force
+          }
+          $candidateStage = Join-Path $env:RUNNER_TEMP 'vanta-cab-candidates'
+          New-Item -Path $candidateStage -ItemType Directory -Force | Out-Null
+
+          Push-Location $sxsc
+          try {
+              $thumbprint = & .\make-cert.ps1
+              if (-not $thumbprint) { throw 'The SxS signing certificate was not created.' }
+
+              Get-ChildItem -LiteralPath (Join-Path $sxsc 'configs') -Filter '*.yaml' -File |
+                  ForEach-Object {
+                      Write-Host "Processing $($_.Name)"
+                      Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $sxsc 'cfg.yaml') -Force
+
+                      python .\sxsc.py
+                      if ($LASTEXITCODE -ne 0) { throw "sxsc.py failed for '$($_.Name)'." }
+
+                      & .\start-build.ps1 -Thumbprint $thumbprint
+
+                      $cabs = @(Get-ChildItem -LiteralPath $sxsc -File -Recurse -Filter '*.cab')
+                      if ($cabs.Count -eq 0) {
+                          throw "The SxS compiler produced no CAB for '$($_.Name)'."
+                      }
+                      foreach ($cab in $cabs) {
+                          Copy-Item -LiteralPath $cab.FullName -Destination $packagePath -Force
+                          Copy-Item -LiteralPath $cab.FullName -Destination $candidateStage -Force
+                      }
+
+                      & .\clean.ps1
+                  }
+          } finally {
+              Pop-Location
+          }
+          "VANTA_CAB_STAGE=$candidateStage" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Regenerate the CBS package hash manifest
+        if: steps.sxsc-configs.outputs.run-sxsc == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Vanta-CbsHashes.psd1 gates every CAB at install time (Assert-VantaCbsHash), so
+          # a workspace with freshly built CABs must carry matching hashes before the CI
+          # Vanta package is built from it.
+          $pkgDir = Join-Path $env:GITHUB_WORKSPACE `
+              'package\Executables\VantaModules\Packages'
+          $manifestPath = Join-Path $pkgDir 'Vanta-CbsHashes.psd1'
+          $header = foreach ($line in [IO.File]::ReadAllLines($manifestPath)) {
+              if ($line -match '^@\{') { break }
+              $line
+          }
+          if (-not $header) { throw 'The hash manifest header comment was not found.' }
+          $entries = @(Get-ChildItem -LiteralPath $pkgDir -Filter '*.cab' -File |
+              Sort-Object Name | ForEach-Object {
+                  $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+                  "    '$($_.Name)' = '$hash'"
+              })
+          if ($entries.Count -eq 0) { throw 'No CABs are available to record in the manifest.' }
+          [IO.File]::WriteAllLines($manifestPath, @($header) + '@{' + $entries + '}')
+          Write-Host "Recorded $($entries.Count) CAB hashes in Vanta-CbsHashes.psd1."
+
+      - name: Stage CAB candidates with hashes
+        if: steps.sxsc-configs.outputs.run-sxsc == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = $env:VANTA_CAB_STAGE
+
+          $cabs = @(Get-ChildItem -LiteralPath $stage -Filter '*.cab' -File)
+          if ($cabs.Count -eq 0) { throw 'No CAB candidates are available to stage.' }
+          $hashLines = @(Get-ChildItem -LiteralPath $stage -Filter '*.cab' -File |
+              Sort-Object Name | ForEach-Object {
+                  $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                  "$hash  $($_.Name)"
+              })
+          [IO.File]::WriteAllLines((Join-Path $stage 'SHA256SUMS.txt'), $hashLines,
+              [Text.Encoding]::ASCII)
+
+      - name: Upload review-only CAB candidates
+        if: steps.sxsc-configs.outputs.run-sxsc == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Vanta-CAB-candidates-${{ env.VANTA_SOURCE_SHA }}
+          path: ${{ env.VANTA_CAB_STAGE }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Build and stage the CI Vanta package
+        id: create-package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $shortSha = $env:VANTA_SOURCE_SHA.Substring(0, 8)
+          $packageName = "Vanta-CI-$shortSha"
+          & .\tools\build\Build-Package.ps1 -ReplaceExisting `
+              -Removals SupportedBuilds -FileName $packageName `
+              -NoExplorer
+
+          $package = Get-Item -LiteralPath "package\$packageName.atlaspkg" -ErrorAction Stop
+          & .\tools\build\Test-Package.ps1 -Path $package.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'The CI Vanta package failed verification.' }
+
+          $stage = Join-Path $env:RUNNER_TEMP 'vanta-ci-package'
+          New-Item -Path $stage -ItemType Directory -Force | Out-Null
+          Copy-Item -LiteralPath $package.FullName -Destination $stage -Force
+          "VANTA_CI_STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload the review-only CI Vanta package
+        if: steps.create-package.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Vanta-CI-${{ env.VANTA_SOURCE_SHA }}
+          path: ${{ env.VANTA_CI_STAGE }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

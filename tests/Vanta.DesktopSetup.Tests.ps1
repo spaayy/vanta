@@ -1,0 +1,90 @@
+BeforeAll {
+    . (Join-Path $PSScriptRoot 'VantaTestHost.ps1')
+    . (Join-Path $script:VantaTestRepoRoot 'app\resources\iso\Desktop-Policy.ps1')
+    $source = Join-Path $script:VantaTestRepoRoot 'app\resources\iso\Desktop.ps1'
+    $errors = $null
+    $ast = [Management.Automation.Language.Parser]::ParseFile($source, [ref]$null, [ref]$errors)
+    if ($errors) { throw ($errors | Out-String) }
+    $restore = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Restore-VantaDesktop' }, $true)
+    . ([scriptblock]::Create($restore.Extent.Text))
+    $start = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Start-VantaWindowsShell' }, $true)
+    . ([scriptblock]::Create($start.Extent.Text))
+    $script:policyPath = 'Software\VantaRewriteTest\DesktopSetup\' + [guid]::NewGuid().ToString('N')
+    $script:shell = 'owned test shell'
+}
+
+AfterAll {
+    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree('Software\VantaRewriteTest', $false)
+}
+
+Describe 'Before-desktop recovery' {
+    BeforeEach {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($script:policyPath)
+        $key.DeleteValue('Shell', $false)
+        $key.Dispose()
+        Mock Start-Process {}
+        Mock Get-Process { @() }
+        Mock Start-Sleep {}
+        Mock Request-VantaDesktopCleanup {
+            $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($script:policyPath, $true)
+            try { Remove-VantaOwnedShell -Key $key -Shell $script:shell }
+            finally { if ($key) { $key.Dispose() } }
+        }
+    }
+
+    It 'removes its own shell and opens Windows' {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($script:policyPath, $true)
+        $key.SetValue('Shell', $script:shell)
+        $key.Dispose()
+        Restore-VantaDesktop
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($script:policyPath)
+        try { $key.GetValue('Shell') | Should -BeNullOrEmpty } finally { $key.Dispose() }
+        # The user can't write the policy key, so the SYSTEM task for this account removes the shell.
+        Should -Invoke Request-VantaDesktopCleanup -Times 1 -Exactly -ParameterFilter { $Sid -eq [Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
+        Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter { $FilePath -eq (Join-Path $env:WINDIR 'explorer.exe') }
+    }
+    It 'preserves a shell installed by another application' {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($script:policyPath, $true)
+        $key.SetValue('Shell', 'another shell')
+        $key.Dispose()
+        Restore-VantaDesktop
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($script:policyPath)
+        try { $key.GetValue('Shell') | Should -Be 'another shell' } finally { $key.Dispose() }
+        Should -Invoke Request-VantaDesktopCleanup -Times 0 -Exactly
+        Should -Invoke Start-Process -Times 1 -Exactly
+    }
+    It 'opens Windows when its shell <Case>' -TestCases @(
+        @{ Case = 'value is gone'; RemoveKey = $false }
+        @{ Case = 'key is gone'; RemoveKey = $true }
+    ) {
+        if ($RemoveKey) { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($script:policyPath) }
+        Restore-VantaDesktop
+        Should -Invoke Start-Process -Times 1 -Exactly
+    }
+    It 'does not open an Explorer folder when the shell is already running' {
+        Mock Get-Process { [pscustomobject]@{ SessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId } }
+        Restore-VantaDesktop
+        Should -Invoke Start-Process -Times 0 -Exactly
+    }
+    It 'does not mistake another session for the current shell' {
+        Mock Get-Process { [pscustomobject]@{ SessionId = -1 } }
+        Start-VantaWindowsShell
+        Should -Invoke Start-Process -Times 1 -Exactly
+    }
+    It 'preserves its shell and opens Windows when the cleanup task cannot start' {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($script:policyPath, $true)
+        $key.SetValue('Shell', $script:shell)
+        $key.Dispose()
+        Mock Request-VantaDesktopCleanup { throw 'Injected task failure' }
+        $previousLocalAppData = $env:LOCALAPPDATA
+        try {
+            $env:LOCALAPPDATA = $TestDrive
+            Restore-VantaDesktop
+            [IO.File]::ReadAllText((Join-Path $TestDrive 'Vanta-desktop-recovery.log')) | Should -Match 'Injected task failure'
+        }
+        finally { $env:LOCALAPPDATA = $previousLocalAppData }
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($script:policyPath)
+        try { $key.GetValue('Shell') | Should -Be $script:shell } finally { $key.Dispose() }
+        Should -Invoke Start-Process -Times 1 -Exactly
+    }
+}
