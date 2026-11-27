@@ -49,14 +49,23 @@ Baixe o `VantaManager.exe` na [última release](https://github.com/spaayy/vanta/
 
 O Vanta requer uma edição e versão suportadas do Windows 11 (veja [versões suportadas do Windows](docs/windows-release-policy.md#supported-releases)).
 
-### Conferir a integridade (`SHA256SUMS`)
+### Verificação, VirusTotal e SmartScreen
 
-Antes de executar, baixe também o arquivo `SHA256SUMS` da release e confira o hash no PowerShell:
+Antes de executar, confira a integridade do `VantaManager.exe` com o `SHA256SUMS` da release (no PowerShell ou no Prompt de Comando):
 
 ```powershell
+# PowerShell
 Get-FileHash .\VantaManager.exe -Algorithm SHA256
 Get-Content .\SHA256SUMS
 ```
+
+```cmd
+:: Prompt de Comando (CMD)
+certutil -hashfile VantaManager.exe SHA256
+```
+
+- **VirusTotal (`v1.0.0`):** você pode consultar o SHA-256 oficial do `VantaManager.exe` (`c4880b7dea2ca19e3ed1811403c6835867cd72e5c52f545cb25fb84928da0421`) diretamente em [virustotal.com/gui/file/c4880b7d…0421](https://www.virustotal.com/gui/file/c4880b7dea2ca19e3ed1811403c6835867cd72e5c52f545cb25fb84928da0421) — se o arquivo ainda não constar na base pública, qualquer pessoa pode enviar o próprio executável ao VirusTotal para conferir os motores de antivírus de forma independente.
+- **Aviso do Windows SmartScreen ("O Windows protegeu o computador" / editor desconhecido):** o Vanta é um projeto independente e aberto que ainda não possui certificado pago de assinatura de código (EV/OV), por isso o SmartScreen pode exibir esse aviso em executáveis novos. Em vez de pedir confiança cega, o projeto é 100% open-source (GPL-3.0), publica o `SHA256SUMS` verificável e distribui o código-fonte completo em `Vanta-1.0.0-source.zip` para auditoria ou compilação local (`cargo build --locked`).
 
 ## O que o Vanta ajusta
 
